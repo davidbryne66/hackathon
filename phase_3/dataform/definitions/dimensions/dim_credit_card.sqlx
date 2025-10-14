@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  schema: "team_4",
+  description: "Credit card dimension with masked numbers",
+  tags: ["dimension", "payment"]
+}
+
+SELECT
+  -- Primary Key
+  cc.CreditCardID AS credit_card_key,
+  cc.CreditCardID AS credit_card_id,
+  
+  -- Credit Card Attributes
+  cc.CardType AS card_type,
+  CONCAT('****', RIGHT(CAST(cc.CardNumber AS STRING), 4)) AS card_number_masked,
+  cc.ExpMonth AS expiration_month,
+  cc.ExpYear AS expiration_year,
+  
+  -- Calculated
+  CASE 
+    WHEN DATE(cc.ExpYear, cc.ExpMonth, 1) < CURRENT_DATE() 
+    THEN TRUE 
+    ELSE FALSE 
+  END AS is_expired,
+  
+  -- Audit
+  CURRENT_TIMESTAMP() AS created_date,
+  CURRENT_TIMESTAMP() AS modified_date
+
+FROM ${ref('Sales_CreditCard')} cc
+

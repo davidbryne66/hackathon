@@ -1,0 +1,139 @@
+config {
+  type: "table",
+  schema: "team_4",
+  description: "Sales fact table at order line item grain",
+  bigquery: {
+    partitionBy: "DATE(PARSE_DATE('%Y%m%d', CAST(order_date_key AS STRING)))",
+    clusterBy: ["customer_key", "product_key", "territory_key"]
+  },
+  dependencies: ["dim_date", "dim_customer", "dim_product", "dim_territory", 
+                 "dim_salesperson", "dim_ship_method", "dim_special_offer", 
+                 "dim_credit_card", "dim_address"],
+  tags: ["fact", "sales"]
+}
+
+-- Simplified sales fact for POC
+-- Note: Requires dimension tables to exist first
+
+WITH source_orders AS (
+  SELECT
+    sod.SalesOrderID,
+    sod.SalesOrderDetailID,
+    sod.CarrierTrackingNumber,
+    sod.OrderQty,
+    sod.ProductID,
+    sod.SpecialOfferID,
+    sod.UnitPrice,
+    sod.UnitPriceDiscount,
+    sod.LineTotal,
+    soh.RevisionNumber,
+    soh.OrderDate,
+    soh.DueDate,
+    soh.ShipDate,
+    soh.Status,
+    soh.OnlineOrderFlag,
+    soh.SalesOrderNumber,
+    soh.PurchaseOrderNumber,
+    soh.CustomerID,
+    soh.SalesPersonID,
+    soh.TerritoryID,
+    soh.BillToAddressID,
+    soh.ShipToAddressID,
+    soh.ShipMethodID,
+    soh.CreditCardID,
+    soh.SubTotal,
+    soh.TaxAmt,
+    soh.Freight,
+    soh.TotalDue
+  FROM ${ref('Sales_SalesOrderDetail')} sod
+  INNER JOIN ${ref('Sales_SalesOrderHeader')} soh 
+    ON sod.SalesOrderID = soh.SalesOrderID
+  WHERE soh.Status >= 5  -- Completed orders only
+),
+
+product_costs AS (
+  SELECT
+    ProductID,
+    StandardCost
+  FROM ${ref('Production_Product')}
+)
+
+SELECT
+  -- Surrogate Key
+  ROW_NUMBER() OVER (ORDER BY so.SalesOrderID, so.SalesOrderDetailID) AS sales_order_key,
+  
+  -- Date Keys
+  CAST(FORMAT_DATE('%Y%m%d', so.OrderDate) AS INT64) AS order_date_key,
+  CAST(FORMAT_DATE('%Y%m%d', so.ShipDate) AS INT64) AS ship_date_key,
+  CAST(FORMAT_DATE('%Y%m%d', so.DueDate) AS INT64) AS due_date_key,
+  
+  -- Dimension Foreign Keys (lookup from dimension tables)
+  COALESCE(dc.customer_key, -1) AS customer_key,
+  COALESCE(dp.product_key, -1) AS product_key,
+  COALESCE(dt.territory_key, -1) AS territory_key,
+  COALESCE(dsp.salesperson_key, -1) AS salesperson_key,
+  COALESCE(dsm.ship_method_key, -1) AS ship_method_key,
+  COALESCE(dso.special_offer_key, -1) AS special_offer_key,
+  COALESCE(dcc.credit_card_key, -1) AS credit_card_key,
+  -1 AS currency_key,  -- Placeholder (currency logic complex)
+  -1 AS store_key,  -- Placeholder (via customer)
+  COALESCE(dba.address_key, -1) AS bill_to_address_key,
+  COALESCE(dsa.address_key, -1) AS ship_to_address_key,
+  
+  -- Degenerate Dimensions
+  so.SalesOrderID AS sales_order_id,
+  so.SalesOrderNumber AS sales_order_number,
+  so.SalesOrderDetailID AS sales_order_detail_id,
+  so.PurchaseOrderNumber AS purchase_order_number,
+  so.CarrierTrackingNumber AS carrier_tracking_number,
+  so.RevisionNumber AS revision_number,
+  
+  -- Measures
+  so.OrderQty AS order_quantity,
+  so.UnitPrice AS unit_price,
+  so.UnitPriceDiscount AS unit_price_discount,
+  so.LineTotal AS line_total,
+  so.SubTotal AS subtotal,
+  so.TaxAmt AS tax_amount,
+  so.Freight AS freight,
+  so.TotalDue AS total_due,
+  
+  -- Calculated Measures
+  (so.UnitPrice * so.UnitPriceDiscount * so.OrderQty) AS discount_amount,
+  (so.LineTotal + (so.UnitPrice * so.UnitPriceDiscount * so.OrderQty)) AS gross_sales,
+  (so.LineTotal - (so.OrderQty * COALESCE(pc.StandardCost, 0))) AS gross_profit,
+  SAFE_DIVIDE(
+    (so.LineTotal - (so.OrderQty * COALESCE(pc.StandardCost, 0))),
+    NULLIF(so.LineTotal, 0)
+  ) * 100 AS profit_margin_pct,
+  
+  COALESCE(pc.StandardCost, 0) AS product_standard_cost,
+  
+  -- Flags
+  so.OnlineOrderFlag AS online_order_flag,
+  so.Status AS order_status,
+  
+  -- Audit
+  'Adventure_Works' AS source_system,
+  CURRENT_TIMESTAMP() AS created_date,
+  CURRENT_TIMESTAMP() AS modified_date
+
+FROM source_orders so
+LEFT JOIN product_costs pc 
+  ON so.ProductID = pc.ProductID
+
+-- Join to dimension tables for surrogate keys
+LEFT JOIN ${ref('dim_customer')} dc ON so.CustomerID = dc.customer_id
+LEFT JOIN ${ref('dim_product')} dp ON so.ProductID = dp.product_id
+LEFT JOIN ${ref('dim_territory')} dt ON so.TerritoryID = dt.territory_id
+LEFT JOIN ${ref('dim_salesperson')} dsp ON so.SalesPersonID = dsp.business_entity_id
+LEFT JOIN ${ref('dim_ship_method')} dsm ON so.ShipMethodID = dsm.ship_method_id
+LEFT JOIN ${ref('dim_special_offer')} dso ON so.SpecialOfferID = dso.special_offer_id
+LEFT JOIN ${ref('dim_credit_card')} dcc ON so.CreditCardID = dcc.credit_card_id
+LEFT JOIN ${ref('dim_address')} dba ON so.BillToAddressID = dba.address_id
+LEFT JOIN ${ref('dim_address')} dsa ON so.ShipToAddressID = dsa.address_id
+
+WHERE so.OrderDate IS NOT NULL
+  AND so.CustomerID IS NOT NULL
+  AND so.ProductID IS NOT NULL
+

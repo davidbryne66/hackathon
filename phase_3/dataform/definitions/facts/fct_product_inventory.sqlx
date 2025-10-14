@@ -1,0 +1,79 @@
+config {
+  type: "table",
+  schema: "team_4",
+  description: "Inventory snapshot fact table",
+  bigquery: {
+    partitionBy: "DATE(PARSE_DATE('%Y%m%d', CAST(snapshot_date_key AS STRING)))",
+    clusterBy: ["product_key", "location_key"]
+  },
+  dependencies: ["dim_date", "dim_product", "dim_location"],
+  tags: ["fact", "inventory"]
+}
+
+WITH inventory_data AS (
+  SELECT
+    inv.ProductID,
+    inv.LocationID,
+    inv.Shelf,
+    inv.Bin,
+    inv.Quantity,
+    inv.ModifiedDate,
+    p.StandardCost,
+    p.ListPrice,
+    p.ReorderPoint,
+    p.SafetyStockLevel
+  FROM ${ref('Production_ProductInventory')} inv
+  INNER JOIN ${ref('Production_Product')} p
+    ON inv.ProductID = p.ProductID
+)
+
+SELECT
+  -- Surrogate Key
+  ROW_NUMBER() OVER (ORDER BY i.ModifiedDate, i.ProductID, i.LocationID) AS inventory_snapshot_key,
+  
+  -- Date Key
+  CAST(FORMAT_DATE('%Y%m%d', i.ModifiedDate) AS INT64) AS snapshot_date_key,
+  
+  -- Dimension Keys (lookup from dimensions)
+  COALESCE(dp.product_key, -1) AS product_key,
+  COALESCE(dl.location_key, -1) AS location_key,
+  
+  -- Degenerate Dimensions
+  i.Shelf AS shelf,
+  i.Bin AS bin,
+  
+  -- Measures
+  i.Quantity AS quantity_on_hand,
+  i.ReorderPoint AS reorder_point,
+  i.SafetyStockLevel AS safety_stock_level,
+  i.StandardCost AS unit_cost,
+  i.ListPrice AS list_price,
+  
+  -- Calculated Measures
+  CAST(i.Quantity * i.StandardCost AS NUMERIC(19,4)) AS inventory_value,
+  0 AS days_of_inventory,  -- Placeholder
+  
+  -- Flags
+  CASE WHEN i.Quantity < i.ReorderPoint THEN TRUE ELSE FALSE END AS below_reorder_point,
+  CASE WHEN i.Quantity < i.SafetyStockLevel THEN TRUE ELSE FALSE END AS below_safety_stock,
+  
+  CASE
+    WHEN i.Quantity = 0 THEN 'Out of Stock'
+    WHEN i.Quantity < i.SafetyStockLevel THEN 'Critical'
+    WHEN i.Quantity < i.ReorderPoint THEN 'Low'
+    ELSE 'Normal'
+  END AS inventory_status,
+  
+  -- Audit
+  'Adventure_Works' AS source_system,
+  CURRENT_TIMESTAMP() AS created_date,
+  CURRENT_TIMESTAMP() AS modified_date
+
+FROM inventory_data i
+LEFT JOIN ${ref('dim_product')} dp ON i.ProductID = dp.product_id
+LEFT JOIN ${ref('dim_location')} dl ON i.LocationID = dl.location_id
+
+WHERE i.ModifiedDate IS NOT NULL
+  AND i.ProductID IS NOT NULL
+  AND i.LocationID IS NOT NULL
+

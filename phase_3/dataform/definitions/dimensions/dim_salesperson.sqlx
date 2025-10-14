@@ -1,0 +1,92 @@
+config {
+  type: "table",
+  schema: "team_4",
+  description: "Salesperson dimension with performance metrics",
+  tags: ["dimension", "sales"]
+}
+
+WITH salespeople AS (
+  SELECT
+    sp.BusinessEntityID,
+    sp.TerritoryID,
+    sp.SalesQuota,
+    sp.Bonus,
+    sp.CommissionPct,
+    sp.SalesYTD,
+    sp.SalesLastYear
+  FROM ${ref('Sales_SalesPerson')} sp
+),
+
+employees AS (
+  SELECT
+    e.BusinessEntityID,
+    e.NationalIDNumber,
+    e.LoginID,
+    e.JobTitle,
+    e.BirthDate,
+    e.MaritalStatus,
+    e.Gender,
+    e.HireDate,
+    e.SalariedFlag,
+    e.VacationHours,
+    e.SickLeaveHours,
+    e.CurrentFlag
+  FROM ${ref('HumanResources_Employee')} e
+),
+
+persons AS (
+  SELECT
+    p.BusinessEntityID,
+    p.FirstName,
+    p.MiddleName,
+    p.LastName
+  FROM ${ref('Person_Person')} p
+)
+
+SELECT
+  -- Primary Key
+  sp.BusinessEntityID AS salesperson_key,
+  sp.BusinessEntityID AS business_entity_id,
+  
+  -- Employee Attributes
+  CAST(e.NationalIDNumber AS STRING) AS national_id_number,
+  e.LoginID AS login_id,
+  e.JobTitle AS job_title,
+  e.BirthDate AS birth_date,
+  e.MaritalStatus AS marital_status,
+  e.Gender AS gender,
+  e.HireDate AS hire_date,
+  e.SalariedFlag AS salaried_flag,
+  e.VacationHours AS vacation_hours,
+  e.SickLeaveHours AS sick_leave_hours,
+  e.CurrentFlag AS current_flag,
+  
+  -- Person Attributes
+  p.FirstName AS first_name,
+  p.MiddleName AS middle_name,
+  p.LastName AS last_name,
+  CONCAT(p.FirstName, ' ', COALESCE(p.MiddleName, ''), ' ', p.LastName) AS full_name,
+  
+  -- Sales Performance
+  sp.SalesQuota AS sales_quota,
+  sp.Bonus AS bonus,
+  sp.CommissionPct AS commission_pct,
+  sp.SalesYTD AS sales_ytd,
+  sp.SalesLastYear AS sales_last_year,
+  
+  -- Calculated
+  DATE_DIFF(CURRENT_DATE(), e.HireDate, YEAR) AS tenure_years,
+  DATE_DIFF(CURRENT_DATE(), e.BirthDate, YEAR) AS age,
+  SAFE_DIVIDE(sp.SalesYTD, NULLIF(sp.SalesQuota, 0)) * 100 AS quota_attainment_pct,
+  
+  -- SCD Type 1 for POC
+  TRUE AS is_current,
+  
+  -- Audit
+  CURRENT_TIMESTAMP() AS created_date,
+  CURRENT_TIMESTAMP() AS modified_date
+
+FROM salespeople sp
+INNER JOIN employees e ON sp.BusinessEntityID = e.BusinessEntityID
+INNER JOIN persons p ON sp.BusinessEntityID = p.BusinessEntityID
+

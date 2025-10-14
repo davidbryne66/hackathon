@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: "team_4",
+  description: "Sales territory dimension",
+  tags: ["dimension", "territory"]
+}
+
+WITH territories AS (
+  SELECT
+    t.TerritoryID,
+    t.Name,
+    t.CountryRegionCode,
+    t.Group,
+    t.SalesYTD,
+    t.SalesLastYear,
+    t.CostYTD,
+    t.CostLastYear
+  FROM ${ref('Sales_SalesTerritory')} t
+),
+
+countries AS (
+  SELECT
+    CountryRegionCode,
+    Name AS CountryName
+  FROM ${ref('Person_CountryRegion')}
+)
+
+SELECT
+  -- Primary Key
+  t.TerritoryID AS territory_key,
+  t.TerritoryID AS territory_id,
+  
+  -- Territory Attributes
+  t.Name AS territory_name,
+  t.CountryRegionCode AS country_region_code,
+  c.CountryName AS country_region_name,
+  t.Group AS territory_group,
+  
+  -- Performance Metrics
+  t.SalesYTD AS sales_ytd,
+  t.SalesLastYear AS sales_last_year,
+  t.CostYTD AS cost_ytd,
+  t.CostLastYear AS cost_last_year,
+  
+  -- Calculated
+  SAFE_DIVIDE(t.SalesYTD - t.SalesLastYear, NULLIF(t.SalesLastYear, 0)) * 100 AS sales_growth_pct,
+  
+  -- Audit
+  CURRENT_TIMESTAMP() AS created_date,
+  CURRENT_TIMESTAMP() AS modified_date
+
+FROM territories t
+LEFT JOIN countries c ON t.CountryRegionCode = c.CountryRegionCode
+

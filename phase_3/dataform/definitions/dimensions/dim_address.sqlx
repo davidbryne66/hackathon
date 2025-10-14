@@ -1,0 +1,66 @@
+config {
+  type: "table",
+  schema: "team_4",
+  description: "Address dimension with geographic hierarchy",
+  tags: ["dimension", "geography"]
+}
+
+WITH addresses AS (
+  SELECT
+    a.AddressID,
+    a.AddressLine1,
+    a.AddressLine2,
+    a.City,
+    a.StateProvinceID,
+    a.PostalCode
+  FROM ${ref('Person_Address')} a
+),
+
+states AS (
+  SELECT
+    sp.StateProvinceID,
+    sp.StateProvinceCode,
+    sp.Name AS StateProvinceName,
+    sp.CountryRegionCode,
+    sp.TerritoryID
+  FROM ${ref('Person_StateProvince')} sp
+),
+
+countries AS (
+  SELECT
+    cr.CountryRegionCode,
+    cr.Name AS CountryName
+  FROM ${ref('Person_CountryRegion')} cr
+)
+
+SELECT
+  -- Primary Key
+  a.AddressID AS address_key,
+  a.AddressID AS address_id,
+  
+  -- Address Attributes
+  a.AddressLine1 AS address_line_1,
+  a.AddressLine2 AS address_line_2,
+  a.City AS city,
+  a.PostalCode AS postal_code,
+  
+  -- State/Province
+  s.StateProvinceID AS state_province_id,
+  s.StateProvinceCode AS state_province_code,
+  s.StateProvinceName AS state_province_name,
+  
+  -- Country
+  s.CountryRegionCode AS country_region_code,
+  c.CountryName AS country_region_name,
+  
+  -- Territory
+  s.TerritoryID AS territory_id,
+  
+  -- Audit
+  CURRENT_TIMESTAMP() AS created_date,
+  CURRENT_TIMESTAMP() AS modified_date
+
+FROM addresses a
+LEFT JOIN states s ON a.StateProvinceID = s.StateProvinceID
+LEFT JOIN countries c ON s.CountryRegionCode = c.CountryRegionCode
+

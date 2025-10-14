@@ -1,0 +1,34 @@
+config {
+  type: "table",
+  schema: "team_4",
+  description: "Currency dimension",
+  tags: ["dimension", "currency"]
+}
+
+SELECT
+  -- Primary Key (use row number since we need numeric key)
+  ROW_NUMBER() OVER (ORDER BY c.CurrencyCode) AS currency_key,
+  
+  -- Natural Key
+  c.CurrencyCode AS currency_code,
+  
+  -- Currency Attributes
+  c.Name AS currency_name,
+  
+  -- Symbol mapping (common currencies)
+  CASE c.CurrencyCode
+    WHEN 'USD' THEN '$'
+    WHEN 'EUR' THEN '€'
+    WHEN 'GBP' THEN '£'
+    WHEN 'CAD' THEN 'C$'
+    WHEN 'AUD' THEN 'A$'
+    WHEN 'JPY' THEN '¥'
+    ELSE c.CurrencyCode
+  END AS symbol,
+  
+  -- Audit
+  CURRENT_TIMESTAMP() AS created_date,
+  CURRENT_TIMESTAMP() AS modified_date
+
+FROM ${ref('Sales_Currency')} c
+
