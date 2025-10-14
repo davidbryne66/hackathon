@@ -1,4 +1,0 @@
-1) Read the csv file and describe the relationship between the entities here.
-2) Given this OLTP schema for a bicycle manufacturer, propose a star schema to analyze sales performance. What would be the central fact table? What dimensions would be most useful?
-3) Give me the DDL based on the schema we generated.
-4) Based on the fact and dimension table relationship (star schema objects), create markdown diagrams

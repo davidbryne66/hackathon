@@ -1,1 +1,0 @@
-1) Using star schema as the target, can you create the source-to-target mapping? Markdown format

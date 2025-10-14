@@ -1,4 +1,0 @@
-1) Write a Dataform SQLX query to create all fact and dimension tables. sort on fact table; split each fact table into separate files. Efficient code and follow industry standards. You are a tenured data architect and adhere to SQL for Google Cloud best practices.
-2) Give me a dataform deployment strategy. this is for engineers to read and should be direct and streamlined. minimal fluff and emojis. just for dev, this is a POC.
-3) This is the BQ source dataset: dna-team-day-2025-20251003.team_day_2025_adventure_works_oltp (location: US), build the dataform repo here so I can copy and run. We are running on a dataform repo called team4 in us-central1, cursor-sandbox is the development workspace. we are creating the tables in the here dna-team-day-2025-20251003.team_4
-4) 
