@@ -1,0 +1,674 @@
+ADVENTURE WORKS STAR SCHEMA DESIGN
+=====================================
+Proposed Dimensional Model for Sales & Product Performance Analytics
+
+OVERVIEW
+--------
+This star schema design transforms the Adventure Works OLTP database into an analytics-optimized 
+structure. The design focuses on sales performance, product analysis, customer behavior, and 
+operational insights.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+FACT TABLES (Measures/Metrics)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. FCT_SALES (Primary Fact Table - GRAIN: One row per order line item)
+   -----------------------------------------------------------------------
+   Purpose: Captures all sales transactions with associated metrics
+   Source: Sales_SalesOrderHeader + Sales_SalesOrderDetail
+   
+   Keys (Foreign Keys to Dimensions):
+   - sales_order_key (surrogate key)
+   - order_date_key → dim_date
+   - ship_date_key → dim_date
+   - due_date_key → dim_date
+   - customer_key → dim_customer
+   - product_key → dim_product
+   - territory_key → dim_territory
+   - salesperson_key → dim_salesperson
+   - ship_method_key → dim_ship_method
+   - special_offer_key → dim_special_offer
+   - credit_card_key → dim_credit_card
+   - currency_key → dim_currency
+   - store_key → dim_store
+   - bill_to_address_key → dim_address
+   - ship_to_address_key → dim_address
+   
+   Degenerate Dimensions (attributes kept in fact table):
+   - sales_order_id (natural key)
+   - sales_order_number
+   - sales_order_detail_id
+   - purchase_order_number
+   - carrier_tracking_number
+   - revision_number
+   
+   Measures (Numeric Facts):
+   - order_quantity
+   - unit_price
+   - unit_price_discount
+   - line_total
+   - subtotal (from header)
+   - tax_amount
+   - freight
+   - total_due
+   - discount_amount (calculated: unit_price * unit_price_discount * order_quantity)
+   - gross_profit (calculated: line_total - (product_standard_cost * order_quantity))
+   
+   Flags:
+   - online_order_flag
+   - order_status
+
+
+2. FCT_PRODUCT_INVENTORY (Snapshot Fact Table - GRAIN: Product inventory by location by day)
+   -----------------------------------------------------------------------
+   Purpose: Track inventory levels over time
+   Source: Production_ProductInventory
+   
+   Keys:
+   - inventory_snapshot_key (surrogate key)
+   - snapshot_date_key → dim_date
+   - product_key → dim_product
+   - location_key → dim_location
+   
+   Measures:
+   - quantity_on_hand
+   - reorder_point
+   - safety_stock_level
+   - days_of_inventory (calculated)
+
+
+3. FCT_PURCHASES (Secondary Fact Table - GRAIN: One row per purchase order line item)
+   -----------------------------------------------------------------------
+   Purpose: Analyze purchasing patterns and vendor performance
+   Source: Purchasing_PurchaseOrderHeader + Purchasing_PurchaseOrderDetail
+   
+   Keys:
+   - purchase_order_key (surrogate key)
+   - order_date_key → dim_date
+   - ship_date_key → dim_date
+   - due_date_key → dim_date
+   - product_key → dim_product
+   - vendor_key → dim_vendor
+   - employee_key → dim_employee
+   - ship_method_key → dim_ship_method
+   
+   Degenerate Dimensions:
+   - purchase_order_id
+   - purchase_order_detail_id
+   - revision_number
+   
+   Measures:
+   - order_quantity
+   - unit_price
+   - line_total
+   - received_quantity
+   - rejected_quantity
+   - stocked_quantity
+   - subtotal
+   - tax_amount
+   - freight
+   - total_due
+   
+   Flags:
+   - order_status
+
+
+4. FCT_WORK_ORDERS (Transactional Fact Table - GRAIN: One row per work order)
+   -----------------------------------------------------------------------
+   Purpose: Analyze production efficiency and manufacturing performance
+   Source: Production_WorkOrder + Production_WorkOrderRouting
+   
+   Keys:
+   - work_order_key (surrogate key)
+   - product_key → dim_product
+   - start_date_key → dim_date
+   - end_date_key → dim_date
+   - due_date_key → dim_date
+   - location_key → dim_location
+   - scrap_reason_key → dim_scrap_reason
+   
+   Measures:
+   - order_quantity
+   - stocked_quantity
+   - scrapped_quantity
+   - planned_cost
+   - actual_cost
+   - actual_resource_hours
+   - cost_variance (calculated: actual_cost - planned_cost)
+   - scrap_rate (calculated: scrapped_quantity / order_quantity)
+
+
+5. FCT_PRODUCT_REVIEWS (Accumulating Snapshot - GRAIN: One row per product review)
+   -----------------------------------------------------------------------
+   Purpose: Analyze customer satisfaction and product feedback
+   Source: Production_ProductReview
+   
+   Keys:
+   - review_key (surrogate key)
+   - product_key → dim_product
+   - review_date_key → dim_date
+   
+   Degenerate Dimensions:
+   - reviewer_name
+   - reviewer_email
+   
+   Measures:
+   - rating (1-5)
+   - review_count (always 1, for aggregation)
+   
+   Text:
+   - comments (for sentiment analysis)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+DIMENSION TABLES (Descriptive Attributes)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. DIM_DATE (Role-Playing Dimension)
+   -----------------------------------------------------------------------
+   Purpose: Time dimension for all date-based analysis
+   Source: Generated table (not from source)
+   Grain: One row per day
+   
+   Primary Key: date_key (surrogate key, e.g., 20250101)
+   
+   Attributes:
+   - full_date (DATE)
+   - day_of_week
+   - day_of_month
+   - day_of_year
+   - day_name (Monday, Tuesday, etc.)
+   - week_of_year
+   - month_number
+   - month_name
+   - quarter
+   - year
+   - fiscal_year
+   - fiscal_quarter
+   - is_weekend (boolean)
+   - is_holiday (boolean)
+   - holiday_name
+   
+   Type: Conformed dimension (used across all fact tables)
+   Note: This dimension "plays different roles" (order date, ship date, due date, etc.)
+
+
+2. DIM_PRODUCT (Slowly Changing Dimension Type 2)
+   -----------------------------------------------------------------------
+   Purpose: Product master with category hierarchy
+   Source: Production_Product + Production_ProductSubcategory + Production_ProductCategory
+           + Production_ProductModel
+   Grain: One row per product per version
+   
+   Primary Key: product_key (surrogate key)
+   Natural Key: product_id
+   
+   Attributes:
+   - product_id (natural key)
+   - product_name
+   - product_number
+   - color
+   - size
+   - size_unit_measure
+   - weight
+   - weight_unit_measure
+   - standard_cost
+   - list_price
+   - product_line (R=Road, M=Mountain, T=Touring, S=Standard)
+   - class (H=High, M=Medium, L=Low)
+   - style (W=Women, M=Men, U=Universal)
+   - days_to_manufacture
+   - sell_start_date
+   - sell_end_date
+   - discontinued_date
+   - make_flag (boolean)
+   - finished_goods_flag (boolean)
+   
+   Hierarchy Attributes:
+   - product_subcategory_id
+   - product_subcategory_name
+   - product_category_id
+   - product_category_name
+   
+   Model Attributes:
+   - product_model_id
+   - product_model_name
+   
+   SCD Type 2 Attributes:
+   - effective_start_date
+   - effective_end_date
+   - is_current (boolean)
+   - version_number
+   
+   Derived Attributes:
+   - profit_margin (calculated: (list_price - standard_cost) / list_price)
+   - is_active (boolean - based on sell dates)
+
+
+3. DIM_CUSTOMER (Slowly Changing Dimension Type 2)
+   -----------------------------------------------------------------------
+   Purpose: Customer master with demographic information
+   Source: Sales_Customer + Person_Person + Person_BusinessEntity + Sales_Store
+   Grain: One row per customer per version
+   
+   Primary Key: customer_key (surrogate key)
+   Natural Key: customer_id
+   
+   Attributes:
+   - customer_id (natural key)
+   - account_number
+   - customer_type (Individual vs Store)
+   
+   Individual Customer Attributes:
+   - person_id
+   - person_type
+   - title
+   - first_name
+   - middle_name
+   - last_name
+   - full_name (calculated)
+   - suffix
+   - email_promotion_preference
+   
+   Store Customer Attributes:
+   - store_id
+   - store_name
+   - store_salesperson_id
+   
+   SCD Type 2 Attributes:
+   - effective_start_date
+   - effective_end_date
+   - is_current (boolean)
+   - version_number
+
+
+4. DIM_TERRITORY (Slowly Changing Dimension Type 1)
+   -----------------------------------------------------------------------
+   Purpose: Sales territory hierarchy and performance
+   Source: Sales_SalesTerritory + Person_CountryRegion
+   Grain: One row per territory
+   
+   Primary Key: territory_key (surrogate key)
+   Natural Key: territory_id
+   
+   Attributes:
+   - territory_id (natural key)
+   - territory_name
+   - country_region_code
+   - country_region_name
+   - territory_group (continent/region: North America, Europe, Pacific)
+   - sales_ytd
+   - sales_last_year
+   - cost_ytd
+   - cost_last_year
+   
+   Derived Attributes:
+   - sales_growth (calculated: (sales_ytd - sales_last_year) / sales_last_year)
+
+
+5. DIM_SALESPERSON (Slowly Changing Dimension Type 2)
+   -----------------------------------------------------------------------
+   Purpose: Sales representative information and performance
+   Source: Sales_SalesPerson + HumanResources_Employee + Person_Person
+   Grain: One row per salesperson per version
+   
+   Primary Key: salesperson_key (surrogate key)
+   Natural Key: business_entity_id
+   
+   Attributes:
+   - business_entity_id (natural key)
+   - national_id_number
+   - login_id
+   - job_title
+   - birth_date
+   - marital_status
+   - gender
+   - hire_date
+   - salaried_flag
+   - vacation_hours
+   - sick_leave_hours
+   - current_flag
+   
+   Person Attributes:
+   - first_name
+   - middle_name
+   - last_name
+   - full_name (calculated)
+   
+   Sales Performance Attributes:
+   - sales_quota
+   - bonus
+   - commission_pct
+   - sales_ytd
+   - sales_last_year
+   
+   SCD Type 2 Attributes:
+   - effective_start_date
+   - effective_end_date
+   - is_current (boolean)
+   - version_number
+   
+   Derived Attributes:
+   - tenure_years (calculated from hire_date)
+   - quota_attainment (calculated: sales_ytd / sales_quota)
+
+
+6. DIM_STORE (Slowly Changing Dimension Type 2)
+   -----------------------------------------------------------------------
+   Purpose: Retail store information
+   Source: Sales_Store + Person_BusinessEntity
+   Grain: One row per store per version
+   
+   Primary Key: store_key (surrogate key)
+   Natural Key: business_entity_id
+   
+   Attributes:
+   - business_entity_id (natural key)
+   - store_name
+   - salesperson_id
+   - demographics (XML - may need parsing)
+   
+   SCD Type 2 Attributes:
+   - effective_start_date
+   - effective_end_date
+   - is_current (boolean)
+
+
+7. DIM_ADDRESS (Type 1 Dimension)
+   -----------------------------------------------------------------------
+   Purpose: Address information for shipping and billing
+   Source: Person_Address + Person_StateProvince + Person_CountryRegion
+   Grain: One row per address
+   
+   Primary Key: address_key (surrogate key)
+   Natural Key: address_id
+   
+   Attributes:
+   - address_id (natural key)
+   - address_line_1
+   - address_line_2
+   - city
+   - postal_code
+   - spatial_location
+   
+   State/Province Attributes:
+   - state_province_id
+   - state_province_code
+   - state_province_name
+   - is_only_state_province_flag
+   
+   Country Attributes:
+   - country_region_code
+   - country_region_name
+   
+   Territory Link:
+   - territory_id (for geographic rollup)
+
+
+8. DIM_SHIP_METHOD (Type 1 Dimension)
+   -----------------------------------------------------------------------
+   Purpose: Shipping method details
+   Source: Purchasing_ShipMethod
+   Grain: One row per shipping method
+   
+   Primary Key: ship_method_key (surrogate key)
+   Natural Key: ship_method_id
+   
+   Attributes:
+   - ship_method_id (natural key)
+   - ship_method_name
+   - ship_base_cost
+   - ship_rate
+
+
+9. DIM_SPECIAL_OFFER (Type 2 Dimension)
+   -----------------------------------------------------------------------
+   Purpose: Promotions and discounts
+   Source: Sales_SpecialOffer
+   Grain: One row per special offer per version
+   
+   Primary Key: special_offer_key (surrogate key)
+   Natural Key: special_offer_id
+   
+   Attributes:
+   - special_offer_id (natural key)
+   - description
+   - discount_percent
+   - offer_type
+   - category
+   - start_date
+   - end_date
+   - min_quantity
+   - max_quantity
+   
+   SCD Type 2 Attributes:
+   - effective_start_date
+   - effective_end_date
+   - is_current (boolean)
+   
+   Derived Attributes:
+   - is_active (based on start/end dates)
+   - offer_duration_days (calculated)
+
+
+10. DIM_CREDIT_CARD (Type 1 Dimension)
+    -----------------------------------------------------------------------
+    Purpose: Payment method information
+    Source: Sales_CreditCard
+    Grain: One row per credit card
+    
+    Primary Key: credit_card_key (surrogate key)
+    Natural Key: credit_card_id
+    
+    Attributes:
+    - credit_card_id (natural key)
+    - card_type
+    - card_number_masked (last 4 digits only)
+    - expiration_month
+    - expiration_year
+    
+    Derived Attributes:
+    - is_expired (boolean)
+
+
+11. DIM_CURRENCY (Type 1 Dimension)
+    -----------------------------------------------------------------------
+    Purpose: Currency information for international sales
+    Source: Sales_Currency
+    Grain: One row per currency
+    
+    Primary Key: currency_key (surrogate key)
+    Natural Key: currency_code
+    
+    Attributes:
+    - currency_code (natural key - ISO code like USD, EUR)
+    - currency_name
+
+
+12. DIM_VENDOR (Type 2 Dimension)
+    -----------------------------------------------------------------------
+    Purpose: Supplier/vendor information
+    Source: Purchasing_Vendor + Person_BusinessEntity
+    Grain: One row per vendor per version
+    
+    Primary Key: vendor_key (surrogate key)
+    Natural Key: business_entity_id
+    
+    Attributes:
+    - business_entity_id (natural key)
+    - account_number
+    - vendor_name
+    - credit_rating (1-5)
+    - preferred_vendor_status
+    - active_flag
+    - purchasing_web_service_url
+    
+    SCD Type 2 Attributes:
+    - effective_start_date
+    - effective_end_date
+    - is_current (boolean)
+
+
+13. DIM_EMPLOYEE (Type 2 Dimension)
+    -----------------------------------------------------------------------
+    Purpose: Employee master for HR and operational analysis
+    Source: HumanResources_Employee + Person_Person
+    Grain: One row per employee per version
+    
+    Primary Key: employee_key (surrogate key)
+    Natural Key: business_entity_id
+    
+    Attributes:
+    - business_entity_id (natural key)
+    - national_id_number
+    - login_id
+    - organization_node
+    - organization_level
+    - job_title
+    - birth_date
+    - marital_status
+    - gender
+    - hire_date
+    - salaried_flag
+    - vacation_hours
+    - sick_leave_hours
+    - current_flag
+    
+    Person Attributes:
+    - first_name
+    - middle_name
+    - last_name
+    - full_name (calculated)
+    
+    SCD Type 2 Attributes:
+    - effective_start_date
+    - effective_end_date
+    - is_current (boolean)
+    - version_number
+    
+    Derived Attributes:
+    - tenure_years
+    - age
+
+
+14. DIM_LOCATION (Type 1 Dimension)
+    -----------------------------------------------------------------------
+    Purpose: Manufacturing/warehouse locations
+    Source: Production_Location
+    Grain: One row per location
+    
+    Primary Key: location_key (surrogate key)
+    Natural Key: location_id
+    
+    Attributes:
+    - location_id (natural key)
+    - location_name
+    - cost_rate
+    - availability
+
+
+15. DIM_SCRAP_REASON (Type 1 Dimension)
+    -----------------------------------------------------------------------
+    Purpose: Reasons for scrapped production
+    Source: Production_ScrapReason
+    Grain: One row per scrap reason
+    
+    Primary Key: scrap_reason_key (surrogate key)
+    Natural Key: scrap_reason_id
+    
+    Attributes:
+    - scrap_reason_id (natural key)
+    - reason_name
+
+
+═══════════════════════════════════════════════════════════════════════════════
+STAR SCHEMA RELATIONSHIPS
+═══════════════════════════════════════════════════════════════════════════════
+
+Central Fact Table: FCT_SALES
+-----------------------------
+This is the primary fact table that will be queried most frequently for sales analysis.
+
+Constellation Schema Structure:
+-------------------------------
+Multiple fact tables share conformed dimensions:
+- dim_date (used by all fact tables)
+- dim_product (used by fct_sales, fct_purchases, fct_product_inventory, fct_work_orders)
+- dim_employee (used by fct_purchases, and links to dim_salesperson)
+
+Fact Table Relationships:
+-------------------------
+FCT_SALES (1) → (M) DIM_DATE (order_date, ship_date, due_date - role playing)
+FCT_SALES (M) → (1) DIM_CUSTOMER
+FCT_SALES (M) → (1) DIM_PRODUCT
+FCT_SALES (M) → (1) DIM_TERRITORY
+FCT_SALES (M) → (1) DIM_SALESPERSON
+FCT_SALES (M) → (1) DIM_SHIP_METHOD
+FCT_SALES (M) → (1) DIM_SPECIAL_OFFER
+FCT_SALES (M) → (1) DIM_CREDIT_CARD
+FCT_SALES (M) → (1) DIM_CURRENCY
+FCT_SALES (M) → (1) DIM_STORE
+FCT_SALES (M) → (1) DIM_ADDRESS (bill_to and ship_to - role playing)
+
+FCT_PURCHASES (M) → (1) DIM_DATE (order_date, ship_date, due_date - role playing)
+FCT_PURCHASES (M) → (1) DIM_PRODUCT
+FCT_PURCHASES (M) → (1) DIM_VENDOR
+FCT_PURCHASES (M) → (1) DIM_EMPLOYEE
+FCT_PURCHASES (M) → (1) DIM_SHIP_METHOD
+
+FCT_PRODUCT_INVENTORY (M) → (1) DIM_DATE
+FCT_PRODUCT_INVENTORY (M) → (1) DIM_PRODUCT
+FCT_PRODUCT_INVENTORY (M) → (1) DIM_LOCATION
+
+FCT_WORK_ORDERS (M) → (1) DIM_DATE (start_date, end_date, due_date - role playing)
+FCT_WORK_ORDERS (M) → (1) DIM_PRODUCT
+FCT_WORK_ORDERS (M) → (1) DIM_LOCATION
+FCT_WORK_ORDERS (M) → (1) DIM_SCRAP_REASON
+
+FCT_PRODUCT_REVIEWS (M) → (1) DIM_DATE
+FCT_PRODUCT_REVIEWS (M) → (1) DIM_PRODUCT
+
+
+═══════════════════════════════════════════════════════════════════════════════
+KEY DESIGN DECISIONS & RATIONALE
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Surrogate Keys:
+   - All dimensions use surrogate keys (integer sequences) as primary keys
+   - Natural keys are preserved as attributes
+   - Enables SCD Type 2 tracking and better query performance
+
+2. Slowly Changing Dimensions:
+   - Type 2 SCD for dimensions where history matters (product, customer, salesperson)
+   - Type 1 SCD for dimensions where only current state matters (address, territory)
+   - Includes effective dates and is_current flag for Type 2 dimensions
+
+3. Role-Playing Dimensions:
+   - dim_date plays multiple roles (order date, ship date, due date)
+   - dim_address plays multiple roles (bill to, ship to)
+   - Implement as views in BI tool or separate foreign keys in fact table
+
+4. Conformed Dimensions:
+   - dim_date, dim_product, and dim_employee are conformed across fact tables
+   - Enables cross-fact analysis (e.g., sales vs. inventory)
+
+5. Grain Selection:
+   - fct_sales: Order line item level (most detailed for flexibility)
+   - fct_product_inventory: Daily snapshot (periodic for trend analysis)
+   - fct_purchases: Purchase order line item level
+   - fct_work_orders: Work order level (with routing detail aggregated)
+
+6. Hierarchies:
+   - Product: Product → Subcategory → Category
+   - Geography: Address → City → State/Province → Country → Territory → Group
+   - Time: Date → Month → Quarter → Year
+   - Organization: Employee → Department (via separate dimension if needed)
+
+7. Calculations in Fact Tables:
+   - Pre-calculated measures (gross_profit, discount_amount) for query performance
+   - Avoids complex joins during query time
+
+8. Business Keys:
+   - Degenerate dimensions (order numbers, tracking numbers) kept in fact table
+   - No dimension tables created for these high-cardinality, non-descriptive attributes
