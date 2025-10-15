@@ -13,9 +13,12 @@ class LookerClient:
         try:
             self.sdk = looker_sdk.init40()
             # Test connection
-            self.sdk.me()
+            me = self.sdk.me()
+            print(f"Looker connected successfully as: {me.display_name}")
         except Exception as e:
-            raise Exception(f"Failed to initialize Looker SDK: {str(e)}")
+            print(f"Looker SDK initialization warning: {str(e)}")
+            print("Will use mock data as fallback.")
+            self.sdk = None
     
     def run_query(self, query_config: Dict[str, Any]) -> List[Dict]:
         """
@@ -27,6 +30,11 @@ class LookerClient:
         Returns:
             List of dictionaries with query results
         """
+        
+        # If SDK not initialized, use mock data
+        if self.sdk is None:
+            print("Looker SDK not available, using mock data")
+            return self._get_mock_data(query_config)
         
         try:
             # Extract query parameters
@@ -40,18 +48,35 @@ class LookerClient:
             # Map explore names to model
             model_name = "adventure_works"
             
+            # Normalize filters - convert lists to comma-separated strings
+            normalized_filters = {}
+            for key, value in filters.items():
+                if isinstance(value, list):
+                    # Convert list to comma-separated string
+                    normalized_filters[key] = ','.join(str(v) for v in value)
+                else:
+                    normalized_filters[key] = str(value)
+            
+            print(f"   Running Looker query:")
+            print(f"   Model: {model_name}")
+            print(f"   Explore: {explore}")
+            print(f"   Dimensions: {dimensions}")
+            print(f"   Measures: {measures}")
+            print(f"   Filters: {normalized_filters}")
+            
             # Create Looker query
             query = models.WriteQuery(
                 model=model_name,
                 view=explore,
                 fields=dimensions + measures,
-                filters=filters,
+                filters=normalized_filters,
                 sorts=sorts,
                 limit=str(limit)
             )
             
             # Create and run query
             query_result = self.sdk.create_query(query)
+            print(f"   Query ID: {query_result.id}")
             
             # Run query and get results
             results = self.sdk.run_query(
@@ -64,12 +89,17 @@ class LookerClient:
             if isinstance(results, str):
                 results = json.loads(results)
             
+            print(f"Query successful, returned {len(results) if isinstance(results, list) else 'N/A'} rows")
             return results
             
         except Exception as e:
-            # Log the error and return mock data
-            print(f"Looker API Error: {str(e)}")
-            print("Using mock data instead...")
+            # Log the error details
+            import traceback
+            print(f"   Looker API Error: {str(e)}")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Traceback:")
+            traceback.print_exc()
+            print("   Using mock data as fallback...")
             return self._get_mock_data(query_config)
     
     def _get_mock_data(self, query_config: Dict[str, Any]) -> List[Dict]:
@@ -141,9 +171,12 @@ class LookerClient:
     
     def test_connection(self) -> bool:
         """Test if Looker connection is working"""
+        if self.sdk is None:
+            return False
         try:
             self.sdk.me()
             return True
-        except:
+        except Exception as e:
+            print(f"Connection test failed: {str(e)}")
             return False
 

@@ -304,51 +304,94 @@ if active_conv['messages']:
                 st.divider()
                 
                 # Smart Visualization Selection
-                if len(df) > 0:
-                    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-                    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+                if len(df) > 0 and len(df.columns) >= 2:
+                    # Identify dimension (grouping) and measure (metric) columns
+                    # Dimensions: year, category, name fields OR columns with few unique values
+                    # Measures: columns starting with fct_ or metric-like names
+                    
+                    dimension_col = None
+                    measure_col = None
+                    
+                    for col in df.columns:
+                        col_lower = col.lower()
+                        # Identify dimension columns
+                        if any(keyword in col_lower for keyword in ['dim_', 'year', 'month', 'quarter', 'category', 'name', 'type', 'status']):
+                            if dimension_col is None:
+                                dimension_col = col
+                        # Identify measure columns
+                        elif any(keyword in col_lower for keyword in ['fct_', 'total', 'count', 'amount', 'average', 'sum', 'revenue', 'sales', 'quantity']):
+                            if measure_col is None:
+                                measure_col = col
+                    
+                    # Fallback: first column is dimension, second is measure
+                    if dimension_col is None and len(df.columns) >= 1:
+                        dimension_col = df.columns[0]
+                    if measure_col is None and len(df.columns) >= 2:
+                        measure_col = df.columns[1]
+                    
+                    # Convert dimension to string for better display
+                    if dimension_col and pd.api.types.is_numeric_dtype(df[dimension_col]):
+                        df[dimension_col] = df[dimension_col].astype(str)
                     
                     viz_col1, viz_col2 = st.columns([2, 1])
                     
                     with viz_col1:
-                        if len(categorical_cols) > 0 and len(numeric_cols) > 0:
-                            # Smart chart selection
-                            if len(df) <= 10:
-                                # Bar chart for small datasets
+                        if dimension_col and measure_col:
+                            # Determine chart type based on data
+                            row_count = len(df)
+                            
+                            # Clean up labels
+                            dim_label = dimension_col.replace('dim_', '').replace('fct_', '').replace('_', ' ').replace('.', ' - ').title()
+                            measure_label = measure_col.replace('dim_', '').replace('fct_', '').replace('_', ' ').replace('.', ' - ').title()
+                            
+                            if row_count <= 15:
+                                # Bar chart for comparisons
                                 fig = px.bar(
                                     df,
-                                    x=categorical_cols[0],
-                                    y=numeric_cols[0],
-                                    title=f"{numeric_cols[0].replace('_', ' ').replace('.', ' - ').title()}",
+                                    x=dimension_col,
+                                    y=measure_col,
+                                    title=f"{measure_label} by {dim_label}",
                                     template="plotly_white",
-                                    color=numeric_cols[0],
-                                    color_continuous_scale="Blues"
+                                    color=measure_col,
+                                    color_continuous_scale="Blues",
+                                    text=measure_col
                                 )
+                                fig.update_traces(texttemplate='%{text:.2s}', textposition='outside')
                                 fig.update_layout(
                                     xaxis_tickangle=-45,
                                     showlegend=False,
-                                    height=350
+                                    height=400,
+                                    xaxis_title=dim_label,
+                                    yaxis_title=measure_label
                                 )
                             else:
-                                # Line chart for larger datasets
+                                # Line chart for trends
                                 fig = px.line(
                                     df.head(20),
-                                    x=categorical_cols[0],
-                                    y=numeric_cols[0],
-                                    title=f"{numeric_cols[0].replace('_', ' ').replace('.', ' - ').title()} Trend",
+                                    x=dimension_col,
+                                    y=measure_col,
+                                    title=f"{measure_label} Trend",
                                     template="plotly_white",
                                     markers=True
                                 )
-                                fig.update_layout(height=350)
+                                fig.update_layout(
+                                    height=400,
+                                    xaxis_title=dim_label,
+                                    yaxis_title=measure_label
+                                )
                             
                             st.plotly_chart(fig, use_container_width=True, key=f"chart_{msg['timestamp']}")
+                        else:
+                            st.info("Chart not generated - query returned data that may need manual visualization.")
                     
                     with viz_col2:
-                        # Additional viz or stats
+                        # Statistics for numeric columns
+                        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
                         if len(numeric_cols) > 0:
                             st.markdown("**Statistics**")
                             for col in numeric_cols[:2]:
-                                st.markdown(f"**{col.replace('_', ' ').replace('.', ' ').title()}**")
+                                col_label = col.replace('_', ' ').replace('.', ' - ').title()
+                                st.markdown(f"**{col_label}**")
                                 st.markdown(f"Max: {df[col].max():,.0f}")
                                 st.markdown(f"Min: {df[col].min():,.0f}")
                                 st.markdown(f"Avg: {df[col].mean():,.0f}")
@@ -413,10 +456,14 @@ if question and question.strip():
         status_placeholder.info("**Analyzing question...**")
         progress_bar.progress(25)
         
-        looker_query = gemini_client.translate_to_looker_query(question)
+        # Pass conversation history for context
+        looker_query = gemini_client.translate_to_looker_query(
+            question, 
+            conversation_history=active_conv['messages']
+        )
         
         # Step 2: Validate query
-        status_placeholder.info("**Fetching data from BigQuery...**")
+        status_placeholder.info("**Fetching data from Looker...**")
         progress_bar.progress(50)
         
         # Step 3: Execute query via Looker API

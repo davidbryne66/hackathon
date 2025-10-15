@@ -31,7 +31,8 @@ Dimensions:
 - dim_customer.customer_type (Individual or Store)
 - dim_territory.territory_name (e.g., Northwest, Northeast)
 - dim_territory.country_name (e.g., United States, Canada)
-- dim_date.year, dim_date.month_name, dim_date.quarter
+- dim_date_order.year, dim_date_order.month_name, dim_date_order.quarter (Order date)
+- dim_date_ship.year, dim_date_ship.month_name (Ship date - optional)
 - dim_salesperson.salesperson_name
 Measures:
 - fct_sales.total_sales_amount (Revenue)
@@ -47,7 +48,6 @@ Dimensions:
 - dim_product.subcategory_name
 - fct_product_reviews.reviewer_name
 - fct_product_reviews.sentiment
-- dim_date.year, dim_date.month_name
 Measures:
 - fct_product_reviews.average_rating (1-5 stars)
 - fct_product_reviews.review_count
@@ -75,7 +75,7 @@ Dimensions:
 - dim_product.product_name
 - dim_product.category_name
 - dim_employee.employee_name (Purchasing employee)
-- dim_date.year, dim_date.month_name
+- dim_date_order.year, dim_date_order.month_name (Order date)
 Measures:
 - fct_purchases.total_order_quantity
 - fct_purchases.total_received_quantity
@@ -85,9 +85,7 @@ Measures:
 Use for: Production, work orders, scrap, quality
 Dimensions:
 - dim_product.product_name
-- dim_location.location_name
 - dim_scrap_reason.scrap_reason_name
-- dim_date.year, dim_date.month_name
 Measures:
 - fct_work_orders.total_order_qty
 - fct_work_orders.total_scrapped_qty
@@ -96,31 +94,56 @@ Measures:
 Date range: 2011-2014
 """
     
-    def translate_to_looker_query(self, user_question: str) -> Dict[str, Any]:
+    def translate_to_looker_query(self, user_question: str, conversation_history: list = None) -> Dict[str, Any]:
         """
         Translate natural language question to Looker query structure
         
         Args:
             user_question: Natural language question from user
+            conversation_history: List of previous messages for context (optional)
             
         Returns:
             Dictionary with explore, dimensions, measures, and filters
         """
         
+        # Build conversation context if available
+        context_section = ""
+        if conversation_history and len(conversation_history) > 0:
+            context_section = "\n\nCONVERSATION HISTORY (for context):\n"
+            # Include last 3 messages for context
+            recent_messages = conversation_history[-3:] if len(conversation_history) > 3 else conversation_history
+            for i, msg in enumerate(recent_messages, 1):
+                context_section += f"{i}. User asked: \"{msg.get('question', '')}\"\n"
+                if 'query' in msg:
+                    context_section += f"   Explored: {msg['query'].get('explore', 'N/A')}, "
+                    context_section += f"Dimensions: {msg['query'].get('dimensions', [])}, "
+                    context_section += f"Filters: {msg['query'].get('filters', {})}\n"
+            context_section += "\nUse this context to understand references like 'compare it', 'same data', 'that category', etc.\n"
+        
         prompt = f"""{self.lookml_context}
-
+{context_section}
 USER QUESTION: "{user_question}"
 
 Convert this to a Looker query. Return ONLY valid JSON with this structure:
 
-CRITICAL RULES:
+CRITICAL RULES FOR ACTIONABLE QUERIES:
 1. ALWAYS include at least one dimension AND at least one measure
-2. Choose the most relevant explore based on the question topic
-3. Use appropriate dimensions for grouping (product, location, date, etc.)
-4. Use appropriate measures for metrics (totals, counts, averages)
-5. Add filters only if time periods or specific values are mentioned
-6. Sort by the main measure descending
-7. Limit to 10-20 rows for large result sets
+2. If conversation history is provided, use it to resolve references:
+   - "compare it to" or "vs" → add to filters or dimensions from previous query
+   - "same thing for" or "what about" → reuse explore/measures, change dimension/filter
+   - "now show" or "break down by" → keep filters, change dimension
+   - "drill into" → add more specific dimension or filter
+3. Choose the most relevant explore based on the question topic
+4. Use appropriate dimensions for grouping that tell a story:
+   - For "what" questions: use category, product, or name dimensions
+   - For "when" questions: use year, month, or quarter dimensions
+   - For "where" questions: use territory, location, or region dimensions
+   - For comparisons: include the dimension being compared (e.g., year for year-over-year)
+5. Use appropriate measures for metrics (totals, counts, averages)
+6. Add filters to narrow scope when mentioned (year ranges, categories, etc.)
+7. Sort by the main measure descending to show top performers
+8. Set reasonable limits (Top N: exact number, comparisons: items compared, categories: 10-15, trends: 12-24)
+9. Make queries visualization-friendly: pair one dimension with one measure
 
 EXAMPLES:
 
@@ -129,28 +152,71 @@ Question: "What were total sales for road bikes last year?"
     "explore": "sales_analysis",
     "dimensions": ["dim_product.subcategory_name"],
     "measures": ["fct_sales.total_sales_amount"],
-    "filters": {{"dim_product.subcategory_name": "Road Bikes", "dim_date.year": "2014"}},
+    "filters": {{"dim_product.subcategory_name": "Road Bikes", "dim_date_order.year": "2014"}},
     "sorts": ["fct_sales.total_sales_amount desc"],
     "limit": 10
 }}
 
-Question: "Show me current inventory levels"
+Question: "Show me current inventory levels by category"
 {{
     "explore": "inventory_analysis",
-    "dimensions": ["dim_product.category_name", "dim_location.location_name"],
+    "dimensions": ["dim_product.category_name"],
     "measures": ["fct_product_inventory.total_inventory"],
     "filters": {{}},
     "sorts": ["fct_product_inventory.total_inventory desc"],
-    "limit": 20
+    "limit": 10
 }}
 
-Question: "What's the average product rating?"
+Question: "Show me top 5 products by revenue"
+{{
+    "explore": "sales_analysis",
+    "dimensions": ["dim_product.product_name"],
+    "measures": ["fct_sales.total_sales_amount"],
+    "filters": {{}},
+    "sorts": ["fct_sales.total_sales_amount desc"],
+    "limit": 5
+}}
+
+Question: "What's the average product rating by category?"
 {{
     "explore": "product_reviews",
     "dimensions": ["dim_product.category_name"],
-    "measures": ["fct_product_reviews.average_rating", "fct_product_reviews.review_count"],
+    "measures": ["fct_product_reviews.average_rating"],
     "filters": {{}},
-    "sorts": ["fct_product_reviews.review_count desc"],
+    "sorts": ["fct_product_reviews.average_rating desc"],
+    "limit": 10
+}}
+
+Question: "Show me sales by month for 2014"
+{{
+    "explore": "sales_analysis",
+    "dimensions": ["dim_date_order.month_name"],
+    "measures": ["fct_sales.total_sales_amount"],
+    "filters": {{"dim_date_order.year": "2014"}},
+    "sorts": ["fct_sales.total_sales_amount desc"],
+    "limit": 12
+}}
+
+CONTEXT-AWARE EXAMPLES:
+Previous: User asked "Show me sales by category for 2014"
+Current: "Now compare it to 2013"
+{{
+    "explore": "sales_analysis",
+    "dimensions": ["dim_product.category_name", "dim_date_order.year"],
+    "measures": ["fct_sales.total_sales_amount"],
+    "filters": {{"dim_date_order.year": "2013,2014"}},
+    "sorts": ["fct_sales.total_sales_amount desc"],
+    "limit": 10
+}}
+
+Previous: User asked "Show me sales for Bikes"
+Current: "What about Components?"
+{{
+    "explore": "sales_analysis",
+    "dimensions": ["dim_product.category_name"],
+    "measures": ["fct_sales.total_sales_amount"],
+    "filters": {{"dim_product.category_name": "Components"}},
+    "sorts": ["fct_sales.total_sales_amount desc"],
     "limit": 10
 }}
 
