@@ -1,73 +1,26 @@
 config {
   type: "table",
   schema: "team_4",
-  description: "Employee dimension for HR and operational analysis",
-  tags: ["dimension", "employee"]
+  description: "Employee dimension",
+  tags: ["dimension", "phase3"]
 }
 
-WITH employees AS (
-  SELECT
-    e.BusinessEntityID,
-    e.NationalIDNumber,
-    e.LoginID,
-    e.OrganizationLevel,
-    e.JobTitle,
-    e.BirthDate,
-    e.MaritalStatus,
-    e.Gender,
-    e.HireDate,
-    e.SalariedFlag,
-    e.VacationHours,
-    e.SickLeaveHours,
-    e.CurrentFlag
-  FROM ${ref('HumanResources_Employee')} e
-),
-
-persons AS (
-  SELECT
-    p.BusinessEntityID,
-    p.FirstName,
-    p.MiddleName,
-    p.LastName
-  FROM ${ref('Person_Person')} p
-)
-
 SELECT
-  -- Primary Key
   e.BusinessEntityID AS employee_key,
   e.BusinessEntityID AS business_entity_id,
-  
-  -- Employee Attributes
-  CAST(e.NationalIDNumber AS STRING) AS national_id_number,
+  e.NationalIDNumber AS national_id,
   e.LoginID AS login_id,
-  CAST(e.OrganizationLevel AS INT64) AS organization_level,
   e.JobTitle AS job_title,
   e.BirthDate AS birth_date,
   e.MaritalStatus AS marital_status,
   e.Gender AS gender,
   e.HireDate AS hire_date,
-  e.SalariedFlag AS salaried_flag,
+  e.SalariedFlag AS is_salaried,
   e.VacationHours AS vacation_hours,
   e.SickLeaveHours AS sick_leave_hours,
-  e.CurrentFlag AS current_flag,
-  
-  -- Person Attributes
-  p.FirstName AS first_name,
-  p.MiddleName AS middle_name,
-  p.LastName AS last_name,
-  CONCAT(p.FirstName, ' ', COALESCE(p.MiddleName, ''), ' ', p.LastName) AS full_name,
-  
-  -- Calculated
-  DATE_DIFF(CURRENT_DATE(), e.HireDate, YEAR) AS tenure_years,
-  DATE_DIFF(CURRENT_DATE(), e.BirthDate, YEAR) AS age,
-  
-  -- SCD Type 1 for POC
-  TRUE AS is_current,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
-FROM employees e
-INNER JOIN persons p ON e.BusinessEntityID = p.BusinessEntityID
+  e.CurrentFlag AS is_current,
+  CONCAT(COALESCE(p.FirstName, ''), ' ', COALESCE(p.LastName, '')) AS full_name,
+  CURRENT_TIMESTAMP() AS loaded_at
+FROM ${ref('HumanResources_Employee')} e
+LEFT JOIN ${ref('Person_Person')} p ON e.BusinessEntityID = p.BusinessEntityID
 

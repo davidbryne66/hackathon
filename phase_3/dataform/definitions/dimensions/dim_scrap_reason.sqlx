@@ -1,29 +1,14 @@
 config {
   type: "table",
   schema: "team_4",
-  description: "Scrap reason dimension for quality analysis",
-  tags: ["dimension", "quality"]
+  description: "Scrap reason dimension - manufacturing defects",
+  tags: ["dimension", "phase4"]
 }
 
 SELECT
-  -- Primary Key
   sr.ScrapReasonID AS scrap_reason_key,
   sr.ScrapReasonID AS scrap_reason_id,
-  
-  -- Scrap Reason Attributes
-  sr.Name AS reason_name,
-  
-  -- Derived
-  CASE 
-    WHEN sr.Name LIKE '%Color%' THEN 'Quality'
-    WHEN sr.Name LIKE '%Thermoform%' THEN 'Manufacturing'
-    WHEN sr.Name LIKE '%Gouge%' THEN 'Damage'
-    ELSE 'Other'
-  END AS reason_category,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
+  sr.Name AS scrap_reason_name,
+  CURRENT_TIMESTAMP() AS loaded_at
 FROM ${ref('Production_ScrapReason')} sr
 

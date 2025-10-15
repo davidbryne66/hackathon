@@ -2,39 +2,20 @@ config {
   type: "table",
   schema: "team_4",
   description: "Special offer/promotion dimension",
-  tags: ["dimension", "promotions"]
+  tags: ["dimension", "phase5"]
 }
 
 SELECT
-  -- Primary Key
   so.SpecialOfferID AS special_offer_key,
   so.SpecialOfferID AS special_offer_id,
-  
-  -- Offer Attributes
-  so.Description AS description,
-  so.DiscountPct AS discount_percent,
+  so.Description AS special_offer_description,
+  so.DiscountPct AS discount_pct,
   so.Type AS offer_type,
-  so.Category AS category,
+  so.Category AS offer_category,
   so.StartDate AS start_date,
   so.EndDate AS end_date,
   so.MinQty AS min_quantity,
   so.MaxQty AS max_quantity,
-  
-  -- Calculated
-  CASE 
-    WHEN CURRENT_DATE() BETWEEN so.StartDate AND so.EndDate 
-    THEN TRUE 
-    ELSE FALSE 
-  END AS is_active,
-  
-  DATE_DIFF(so.EndDate, so.StartDate, DAY) AS offer_duration_days,
-  
-  -- SCD Type 1 for POC
-  TRUE AS is_current,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
+  CURRENT_TIMESTAMP() AS loaded_at
 FROM ${ref('Sales_SpecialOffer')} so
 

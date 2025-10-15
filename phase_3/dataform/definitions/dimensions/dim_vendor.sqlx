@@ -1,36 +1,18 @@
 config {
   type: "table",
   schema: "team_4",
-  description: "Vendor/supplier dimension",
-  tags: ["dimension", "vendor"]
+  description: "Vendor dimension - suppliers",
+  tags: ["dimension", "phase3"]
 }
 
 SELECT
-  -- Primary Key
   v.BusinessEntityID AS vendor_key,
   v.BusinessEntityID AS business_entity_id,
-  
-  -- Vendor Attributes
   v.AccountNumber AS account_number,
   v.Name AS vendor_name,
   v.CreditRating AS credit_rating,
-  v.PreferredVendorStatus AS preferred_vendor_status,
-  v.ActiveFlag AS active_flag,
-  v.PurchasingWebServiceURL AS purchasing_web_service_url,
-  
-  -- Derived
-  CASE 
-    WHEN v.CreditRating >= 4 THEN 'Premium'
-    WHEN v.CreditRating >= 3 THEN 'Standard'
-    ELSE 'Basic'
-  END AS vendor_tier,
-  
-  -- SCD Type 1 for POC
-  TRUE AS is_current,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
+  v.PreferredVendorStatus AS is_preferred_vendor,
+  v.ActiveFlag AS is_active,
+  CURRENT_TIMESTAMP() AS loaded_at
 FROM ${ref('Purchasing_Vendor')} v
 

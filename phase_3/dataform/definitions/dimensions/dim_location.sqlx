@@ -1,31 +1,16 @@
 config {
   type: "table",
   schema: "team_4",
-  description: "Manufacturing/warehouse location dimension",
-  tags: ["dimension", "location"]
+  description: "Location dimension - manufacturing/warehouse locations",
+  tags: ["dimension", "phase2"]
 }
 
 SELECT
-  -- Primary Key
   l.LocationID AS location_key,
   l.LocationID AS location_id,
-  
-  -- Location Attributes
   l.Name AS location_name,
   l.CostRate AS cost_rate,
   l.Availability AS availability,
-  
-  -- Derived
-  CASE 
-    WHEN l.Name LIKE '%Tool%' THEN 'Tools'
-    WHEN l.Name LIKE '%Paint%' THEN 'Painting'
-    WHEN l.Name LIKE '%Frame%' THEN 'Frame Forming'
-    ELSE 'General'
-  END AS location_type,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
+  CURRENT_TIMESTAMP() AS loaded_at
 FROM ${ref('Production_Location')} l
 

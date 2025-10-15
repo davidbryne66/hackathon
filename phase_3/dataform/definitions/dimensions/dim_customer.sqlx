@@ -1,90 +1,22 @@
 config {
   type: "table",
   schema: "team_4",
-  description: "Customer dimension with individual and store customers",
-  tags: ["dimension", "customer"]
+  description: "Customer dimension",
+  tags: ["dimension", "phase5"]
 }
 
-WITH customers AS (
-  SELECT
-    c.CustomerID,
-    c.PersonID,
-    c.StoreID,
-    c.TerritoryID,
-    c.AccountNumber
-  FROM ${ref('Sales_Customer')} c
-),
-
-persons AS (
-  SELECT
-    p.BusinessEntityID,
-    p.PersonType,
-    p.Title,
-    p.FirstName,
-    p.MiddleName,
-    p.LastName,
-    p.EmailPromotion
-  FROM ${ref('Person_Person')} p
-),
-
-stores AS (
-  SELECT
-    s.BusinessEntityID,
-    s.Name AS StoreName,
-    s.SalesPersonID
-  FROM ${ref('Sales_Store')} s
-)
-
 SELECT
-  -- Primary Key
   c.CustomerID AS customer_key,
   c.CustomerID AS customer_id,
-  
-  -- Customer Attributes
   c.AccountNumber AS account_number,
-  CASE 
-    WHEN c.PersonID IS NOT NULL THEN 'Individual'
-    WHEN c.StoreID IS NOT NULL THEN 'Store'
-    ELSE 'Unknown'
-  END AS customer_type,
-  
-  -- Individual Customer
   c.PersonID AS person_id,
-  p.PersonType AS person_type,
-  p.Title AS title,
-  p.FirstName AS first_name,
-  p.MiddleName AS middle_name,
-  p.LastName AS last_name,
-  CONCAT(
-    COALESCE(p.Title, ''), 
-    ' ', 
-    COALESCE(p.FirstName, ''), 
-    ' ', 
-    COALESCE(p.MiddleName, ''), 
-    ' ', 
-    COALESCE(p.LastName, '')
-  ) AS full_name,
-  p.EmailPromotion AS email_promotion_preference,
-  
-  -- Store Customer
   c.StoreID AS store_id,
-  s.StoreName AS store_name,
-  s.SalesPersonID AS store_salesperson_id,
-  
-  -- Geography
   c.TerritoryID AS territory_id,
-  
-  -- Segmentation (placeholder)
-  'New' AS customer_segment,
-  
-  -- SCD Type 1 for POC
-  TRUE AS is_current,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
-FROM customers c
-LEFT JOIN persons p ON c.PersonID = p.BusinessEntityID
-LEFT JOIN stores s ON c.StoreID = s.BusinessEntityID
+  CONCAT(COALESCE(p.FirstName, ''), ' ', COALESCE(p.LastName, '')) AS customer_name,
+  p.PersonType AS person_type,
+  s.Name AS store_name,
+  CURRENT_TIMESTAMP() AS loaded_at
+FROM ${ref('Sales_Customer')} c
+LEFT JOIN ${ref('Person_Person')} p ON c.PersonID = p.BusinessEntityID
+LEFT JOIN ${ref('Sales_Store')} s ON c.StoreID = s.BusinessEntityID
 

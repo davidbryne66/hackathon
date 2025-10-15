@@ -1,9 +1,0 @@
-{
-  "name": "adventure-works-dataform",
-  "version": "1.0.0",
-  "description": "Adventure Works dimensional model transformation",
-  "dependencies": {
-    "@dataform/core": "^2.9.0"
-  }
-}
-

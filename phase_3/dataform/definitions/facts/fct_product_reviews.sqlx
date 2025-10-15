@@ -1,56 +1,24 @@
 config {
   type: "table",
   schema: "team_4",
-  description: "Product reviews fact table (smallest - only 4 rows)",
-  bigquery: {
-    partitionBy: "DATE(PARSE_DATE('%Y%m%d', CAST(review_date_key AS STRING)))",
-    clusterBy: ["product_key", "rating"]
-  },
-  dependencies: ["dim_date", "dim_product"],
+  description: "Product reviews fact table",
+  dependencies: ["dim_product"],
   tags: ["fact"]
 }
 
 SELECT
-  ROW_NUMBER() OVER (ORDER BY pr.ProductReviewID) AS review_key,
-  
-  -- Dimension keys
+  pr.ProductReviewID AS review_key,
   COALESCE(dp.product_key, -1) AS product_key,
-  CAST(FORMAT_DATE('%Y%m%d', DATE(TIMESTAMP_SECONDS(CAST(pr.ReviewDate AS INT64)))) AS INT64) AS review_date_key,
-  
-  -- Degenerate dimensions
-  pr.ProductReviewID AS product_review_id,
+  pr.ReviewDate AS review_date,
   pr.ReviewerName AS reviewer_name,
-  
-  -- Measures
   pr.Rating AS rating,
-  1 AS review_count,
   pr.Comments AS comments,
-  COALESCE(LENGTH(pr.Comments), 0) AS comment_length,
-  
-  -- Calculated sentiment (simple rule-based)
-  CAST(
-    CASE
-      WHEN pr.Rating >= 4 THEN 0.75
-      WHEN pr.Rating = 3 THEN 0.0
-      ELSE -0.75
-    END AS NUMERIC(5,2)
-  ) AS sentiment_score,
-  
+  LENGTH(pr.Comments) AS comment_length,
   CASE
     WHEN pr.Rating >= 4 THEN 'Positive'
     WHEN pr.Rating = 3 THEN 'Neutral'
     ELSE 'Negative'
-  END AS sentiment_category,
-  
-  -- Flags
-  CASE WHEN pr.Comments IS NOT NULL AND LENGTH(pr.Comments) > 0 THEN TRUE ELSE FALSE END AS has_comments,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date
-
+  END AS sentiment,
+  CURRENT_TIMESTAMP() AS loaded_at
 FROM ${ref('Production_ProductReview')} pr
 LEFT JOIN ${ref('dim_product')} dp ON pr.ProductID = dp.product_id
-
-WHERE pr.ProductReviewID IS NOT NULL
-  AND pr.ProductID IS NOT NULL
-  AND pr.Rating BETWEEN 1 AND 5

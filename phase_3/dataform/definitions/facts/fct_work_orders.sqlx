@@ -1,91 +1,27 @@
 config {
   type: "table",
   schema: "team_4",
-  description: "Work order fact table for manufacturing",
-  bigquery: {
-    partitionBy: "DATE(PARSE_DATE('%Y%m%d', CAST(due_date_key AS STRING)))",
-    clusterBy: ["product_key"]
-  },
-  dependencies: ["dim_date", "dim_product", "dim_location", "dim_scrap_reason"],
-  tags: ["fact", "manufacturing"]
+  description: "Work order fact table - manufacturing",
+  tags: ["fact", "phase4"],
+  dependencies: ["dim_product", "dim_scrap_reason"]
 }
 
--- Note: This is a simplified version without routing aggregation
--- Routing table may not be in source or needs separate handling
-
 SELECT
-  -- Surrogate Key
-  ROW_NUMBER() OVER (ORDER BY wo.WorkOrderID) AS work_order_key,
-  
-  -- Dimension Keys (lookup from dimensions)
-  COALESCE(dp.product_key, -1) AS product_key,
-  
-  -- Date Keys
-  CAST(FORMAT_DATE('%Y%m%d', wo.StartDate) AS INT64) AS start_date_key,
-  CAST(FORMAT_DATE('%Y%m%d', wo.EndDate) AS INT64) AS end_date_key,
-  CAST(FORMAT_DATE('%Y%m%d', wo.DueDate) AS INT64) AS due_date_key,
-  
-  -1 AS location_key,  -- Placeholder (routing table not included)
-  COALESCE(dsr.scrap_reason_key, -1) AS scrap_reason_key,
-  
-  -- Degenerate Dimension
+  wo.WorkOrderID AS work_order_key,
   wo.WorkOrderID AS work_order_id,
-  
-  -- Measures
+  COALESCE(dp.product_key, -1) AS product_key,
+  COALESCE(dsr.scrap_reason_key, -1) AS scrap_reason_key,
+  CAST(FORMAT_DATE('%Y%m%d', DATE(wo.StartDate)) AS INT64) AS start_date_key,
+  CAST(FORMAT_DATE('%Y%m%d', DATE(wo.EndDate)) AS INT64) AS end_date_key,
+  CAST(FORMAT_DATE('%Y%m%d', DATE(wo.DueDate)) AS INT64) AS due_date_key,
   wo.OrderQty AS order_quantity,
   wo.StockedQty AS stocked_quantity,
   wo.ScrappedQty AS scrapped_quantity,
-  
-  CAST(0 AS NUMERIC(19,4)) AS planned_cost,  -- Placeholder
-  CAST(0 AS NUMERIC(19,4)) AS actual_cost,  -- Placeholder
-  CAST(0 AS NUMERIC(10,2)) AS actual_resource_hours,  -- Placeholder
-  
-  -- Calculated Measures
-  CAST(0 AS NUMERIC(19,4)) AS cost_variance,
-  CAST(0 AS NUMERIC(10,2)) AS cost_variance_pct,
-  CAST(SAFE_DIVIDE(wo.ScrappedQty, NULLIF(wo.OrderQty, 0)) * 100 AS NUMERIC(10,2)) AS scrap_rate_pct,
-  CAST(SAFE_DIVIDE(wo.StockedQty, NULLIF(wo.OrderQty, 0)) * 100 AS NUMERIC(10,2)) AS yield_rate_pct,
-  CAST(0 AS NUMERIC(19,4)) AS cost_per_unit,
-  
-  DATE_DIFF(wo.EndDate, wo.StartDate, DAY) AS production_days,
-  DATE_DIFF(wo.EndDate, wo.DueDate, DAY) AS days_early_late,
-  
-  CAST(SAFE_DIVIDE(wo.OrderQty, NULLIF(DATE_DIFF(wo.EndDate, wo.StartDate, DAY), 0)) AS NUMERIC(10,2)) AS units_per_day,
-  CAST(0 AS NUMERIC(10,2)) AS units_per_hour,  -- Placeholder
-  
-  -- Flags
-  CASE WHEN wo.EndDate IS NOT NULL THEN TRUE ELSE FALSE END AS is_completed,
-  CASE 
-    WHEN wo.EndDate IS NOT NULL AND wo.EndDate <= wo.DueDate THEN TRUE
-    WHEN wo.EndDate IS NULL AND CURRENT_DATE() <= wo.DueDate THEN TRUE
-    ELSE FALSE 
-  END AS is_on_time,
-  CASE WHEN wo.ScrappedQty > 0 THEN TRUE ELSE FALSE END AS has_scrap,
-  FALSE AS is_over_budget,  -- Placeholder
-  
-  CASE
-    WHEN wo.EndDate IS NULL AND CURRENT_DATE() > wo.DueDate THEN 'Overdue'
-    WHEN wo.EndDate IS NULL THEN 'In Progress'
-    WHEN wo.EndDate <= wo.DueDate THEN 'Completed On Time'
-    ELSE 'Completed Late'
-  END AS work_order_status,
-  
-  CASE
-    WHEN wo.ScrappedQty = 0 THEN 'Perfect Quality'
-    WHEN SAFE_DIVIDE(wo.ScrappedQty, NULLIF(wo.OrderQty, 0)) < 0.05 THEN 'Acceptable Scrap'
-    WHEN SAFE_DIVIDE(wo.ScrappedQty, NULLIF(wo.OrderQty, 0)) < 0.10 THEN 'High Scrap'
-    ELSE 'Critical Scrap'
-  END AS quality_status,
-  
-  -- Audit
-  'Adventure_Works' AS source_system,
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
+  wo.OrderQty - wo.ScrappedQty AS good_quantity,
+  SAFE_DIVIDE(wo.ScrappedQty, wo.OrderQty) AS scrap_rate,
+  DATE_DIFF(DATE(wo.EndDate), DATE(wo.StartDate), DAY) AS production_days,
+  CURRENT_TIMESTAMP() AS loaded_at
 FROM ${ref('Production_WorkOrder')} wo
 LEFT JOIN ${ref('dim_product')} dp ON wo.ProductID = dp.product_id
 LEFT JOIN ${ref('dim_scrap_reason')} dsr ON wo.ScrapReasonID = dsr.scrap_reason_id
-
-WHERE wo.DueDate IS NOT NULL
-  AND wo.ProductID IS NOT NULL
 

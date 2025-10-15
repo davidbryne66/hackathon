@@ -2,29 +2,15 @@ config {
   type: "table",
   schema: "team_4",
   description: "Shipping method dimension",
-  tags: ["dimension", "shipping"]
+  tags: ["dimension", "phase3"]
 }
 
 SELECT
-  -- Primary Key
   sm.ShipMethodID AS ship_method_key,
   sm.ShipMethodID AS ship_method_id,
-  
-  -- Ship Method Attributes
   sm.Name AS ship_method_name,
   sm.ShipBase AS ship_base_cost,
   sm.ShipRate AS ship_rate,
-  
-  -- Derived
-  CASE 
-    WHEN LOWER(sm.Name) LIKE '%express%' OR LOWER(sm.Name) LIKE '%overnight%' 
-    THEN TRUE 
-    ELSE FALSE 
-  END AS is_express,
-  
-  -- Audit
-  CURRENT_TIMESTAMP() AS created_date,
-  CURRENT_TIMESTAMP() AS modified_date
-
+  CURRENT_TIMESTAMP() AS loaded_at
 FROM ${ref('Purchasing_ShipMethod')} sm
 
