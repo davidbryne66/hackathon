@@ -1,1 +1,216 @@
-1) Using star schema as the target, can you create the source-to-target mapping? Markdown format
+PHASE 2: SOURCE-TO-TARGET MAPPING
+==================================
+
+Prerequisites:
+- Phase 1 complete (star schema design in schema.txt)
+- OLTP schema from raw_schema.csv
+- Understanding of source table relationships
+
+INCREMENTAL PROMPTS
+-------------------
+
+1. Create Source-to-Target Mapping
+   "Using the star schema from Phase 1 as the target, create comprehensive source-to-target 
+    mapping documentation.
+    
+    For each target table (5 facts + 14 dimensions):
+    
+    **Table Structure:**
+    - Target table name
+    - Source tables (all OLTP tables needed)
+    - Grain definition
+    - Transformation logic for each field
+    
+    **Field Mappings:**
+    For each target field, document:
+    - Target column name
+    - Source table.column
+    - Transformation logic (if any)
+    - Data type
+    - Business rules
+    - NULL handling
+    
+    Format as markdown with clear sections for each table.
+    Save to stt.md (source-to-target mapping)"
+
+KEY LEARNINGS
+-------------
+
+1. Mapping Documentation
+   - Be explicit about every transformation
+   - Document business rules clearly
+   - Note any data quality issues
+   - Include examples for complex logic
+   - Version control mapping documents
+
+2. Common Transformations
+   - Surrogate key generation (DENSE_RANK, ROW_NUMBER)
+   - Date key formatting (YYYYMMDD as INT64)
+   - String concatenation (full names)
+   - Type casting (STRING to INT64)
+   - COALESCE for NULL handling
+   - CASE statements for categorization
+
+3. Join Logic
+   - Document join conditions
+   - Specify join types (INNER, LEFT, RIGHT)
+   - Note optional vs required dimensions
+   - Handle missing dimension records
+   - Define default values for nulls
+
+4. Business Rules
+   - Gross profit = LineTotal - (StandardCost × Quantity)
+   - Scrap rate = ScrappedQty / OrderQty
+   - Stock status categories based on quantity thresholds
+   - Sentiment from rating values
+   - Date calculations and fiscal periods
+
+5. Data Quality Considerations
+   - Handle NULL values appropriately
+   - Deal with orphaned records (missing foreign keys)
+   - Validate ranges (negative quantities, future dates)
+   - Check for duplicates in dimensions
+   - Document data cleansing rules
+
+6. Surrogate Key Strategy
+   - Use DENSE_RANK() OVER (ORDER BY natural_key)
+   - Ensures consistent key assignment
+   - Reproducible across runs
+   - Independent of source system changes
+   - Allows for late-arriving dimensions
+
+MAPPING STRUCTURE
+-----------------
+
+For Each Table Document:
+
+### Target Table: dim_product
+
+**Source Tables:**
+- Production.Product
+- Production.ProductSubcategory
+- Production.ProductCategory
+
+**Grain:** One row per product
+
+**Transformation Logic:**
+
+| Target Column | Source | Transformation | Type | Notes |
+|---------------|--------|----------------|------|-------|
+| product_key | Calculated | DENSE_RANK() OVER (ORDER BY ProductID) | INT64 | Surrogate key |
+| product_id | Product.ProductID | Direct | INT64 | Natural key |
+| product_name | Product.Name | Direct | STRING | Product name |
+| category_name | ProductCategory.Name | LEFT JOIN via ProductSubcategory | STRING | Hierarchy |
+| subcategory_name | ProductSubcategory.Name | LEFT JOIN | STRING | Hierarchy |
+| ... | ... | ... | ... | ... |
+
+**Business Rules:**
+- NULL subcategory means product has no subcategory (accessories)
+- Cost and Price in USD
+- Discontinued products included with flag
+
+**Data Quality:**
+- 504 products expected
+- No duplicates on ProductID
+- All products have category
+
+Repeat for all 19 tables (5 facts + 14 dimensions)
+
+CRITICAL MAPPINGS
+-----------------
+
+1. Date Dimension (dim_date)
+   - Generate date spine: 2011-01-01 to 2014-12-31
+   - Date key: CAST(FORMAT_DATE('%Y%m%d', date) AS INT64)
+   - Pre-calculate: year, quarter, month, day_name, is_weekend
+   - 1,461 rows expected
+
+2. Sales Fact (fct_sales)
+   - Join SalesOrderDetail to SalesOrderHeader
+   - Join to all dimensions for foreign keys
+   - Calculate gross_profit: LineTotal - (StandardCost × OrderQty)
+   - Handle NULL territory (online sales)
+   - ~121K rows expected
+
+3. Customer Dimension (dim_customer)
+   - Union Individual customers (Person) and Store customers
+   - customer_type: 'Individual' or 'Store'
+   - Full address from multiple tables
+   - ~19K rows expected
+
+4. Product Hierarchy (dim_product)
+   - Three-level hierarchy: Category → Subcategory → Product
+   - Handle products without subcategory
+   - Include all product attributes
+   - ~504 rows expected
+
+5. Inventory Fact (fct_product_inventory)
+   - Snapshot nature (point-in-time)
+   - Modified date becomes snapshot_date
+   - Stock status calculated from quantity
+   - ~1K rows expected
+
+VALIDATION CHECKLIST
+--------------------
+☐ All target columns mapped to sources
+☐ Transformation logic documented
+☐ Data types specified
+☐ Business rules explained
+☐ NULL handling defined
+☐ Join conditions documented
+☐ Surrogate key logic defined
+☐ Expected row counts estimated
+☐ Data quality rules noted
+☐ Complex transformations have examples
+
+EXAMPLE MAPPING PATTERNS
+-------------------------
+
+**Pattern 1: Surrogate Key**
+```sql
+DENSE_RANK() OVER (ORDER BY source_table.natural_key) AS surrogate_key
+```
+
+**Pattern 2: Date Key**
+```sql
+CAST(FORMAT_DATE('%Y%m%d', source_table.date_column) AS INT64) AS date_key
+```
+
+**Pattern 3: Hierarchy Flattening**
+```sql
+LEFT JOIN dim_table1 t1 ON source.key1 = t1.key1
+LEFT JOIN dim_table2 t2 ON t1.key2 = t2.key2
+SELECT t2.top_level, t1.mid_level, source.low_level
+```
+
+**Pattern 4: Calculated Metrics**
+```sql
+(line_total - (standard_cost * quantity)) AS gross_profit
+```
+
+**Pattern 5: Categorization**
+```sql
+CASE
+  WHEN quantity = 0 THEN 'Out of Stock'
+  WHEN quantity < 10 THEN 'Low Stock'
+  WHEN quantity < 50 THEN 'Medium Stock'
+  ELSE 'Well Stocked'
+END AS stock_status
+```
+
+COMMON ISSUES
+-------------
+- Missing join conditions → Cartesian products
+- Wrong join type → Missing or extra rows
+- Incorrect key generation → Non-unique keys
+- NULL handling → Unexpected nulls in output
+- Type mismatches → Conversion errors
+- Missing COALESCE → Null foreign keys
+
+OUTPUT DELIVERABLE
+------------------
+Single file: stt.md containing:
+- Mapping for all 19 tables (5 facts + 14 dimensions)
+- Source tables, transformation logic, business rules
+- Data quality notes and expected row counts
+- Serves as blueprint for Phase 3 Dataform implementation

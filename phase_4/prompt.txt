@@ -1,0 +1,198 @@
+PHASE 4: LOOKER LOOKML SEMANTIC LAYER
+======================================
+
+Prerequisites:
+- Phase 3 complete (all fact and dimension tables in BigQuery)
+- Access to Looker instance
+- Understanding of star schema from Phase 1
+
+INCREMENTAL PROMPTS
+-------------------
+
+1. Understanding LookML
+   "Read and understand: https://cloud.google.com/looker/docs/write-lookml-intro?hl=en
+    
+    We need to create a LookML semantic layer for Adventure Works data.
+    Our BigQuery dataset has:
+    - 5 fact tables: fct_sales, fct_product_reviews, fct_product_inventory, fct_purchases, fct_work_orders
+    - 14 dimension tables: dim_product, dim_customer, dim_date, dim_territory, dim_salesperson, 
+      dim_location, dim_vendor, dim_employee, dim_ship_method, dim_special_offer, 
+      dim_credit_card, dim_currency, dim_address, dim_scrap_reason
+    
+    Create a LookML project structure."
+
+2. Create Model File
+   "Create adventure_works.model.lkml with:
+    - Connection to BigQuery (teamday2025_team4)
+    - Include all view files
+    - Define 5 explores:
+      * sales_analysis (fct_sales with all related dimensions)
+      * product_reviews (fct_product_reviews with product, date)
+      * inventory_analysis (fct_product_inventory with product, location)
+      * purchasing_analysis (fct_purchases with vendor, product, employee, date)
+      * manufacturing_analysis (fct_work_orders with product, location, scrap_reason, date)"
+
+3. Create Fact View Files
+   "For each fact table, create a LookML view file (.view.lkml):
+    
+    For fct_sales:
+    - Primary key: sales_order_detail_id
+    - Foreign keys (hidden): product_key, customer_key, territory_key, salesperson_key, etc.
+    - Degenerate dimensions: sales_order_number, online_order_flag, order_status
+    - Measures: total_sales_amount, order_count, average_order_value, total_gross_profit
+    - Add descriptions for all fields
+    - Format currency fields as USD
+    
+    Repeat for:
+    - fct_product_reviews (primary_key: product_review_id)
+    - fct_product_inventory (primary_key: inventory_key)
+    - fct_purchases (primary_key: purchase_order_detail_id)
+    - fct_work_orders (primary_key: work_order_id)"
+
+4. Create Dimension View Files
+   "For each dimension table, create a LookML view file:
+    
+    For dim_product:
+    - Primary key: product_key
+    - Dimensions: product_name, category_name, subcategory_name, product_number, color, size
+    - Hierarchy: category → subcategory → product (use drill_fields)
+    - Measures: product_count
+    - Add descriptions optimized for AI understanding
+    
+    For dim_date:
+    - Primary key: date_key
+    - Dimensions: full_date, year, quarter, month_name, month_number, day_name, is_weekend
+    - Proper date types
+    
+    For dim_customer:
+    - Primary key: customer_key
+    - Dimensions: customer_name, customer_type, city, state_province, country_region
+    - Group fields logically
+    
+    Repeat for all 14 dimension tables with appropriate fields."
+
+5. Define Explore Joins
+   "In adventure_works.model.lkml, define joins for each explore:
+    
+    For sales_analysis:
+    - Join dim_product (many_to_one on product_key)
+    - Join dim_customer (many_to_one on customer_key)
+    - Join dim_territory (many_to_one on territory_key)
+    - Join dim_date (many_to_one on order_date_key)
+    - Join dim_salesperson (many_to_one on salesperson_key)
+    - Join dim_ship_method, dim_special_offer, dim_credit_card, dim_currency, dim_address
+    
+    Use left_outer joins for optional dimensions.
+    Ensure relationship types are correct (many_to_one, one_to_one)."
+
+6. Optimize for Phase 5
+   "Review all view files for Phase 5 integration:
+    - Add clear, descriptive labels for every field
+    - Write descriptions that explain business meaning
+    - Use business terminology over technical terms
+    - Hide foreign keys (they're not needed by end users)
+    - Group related dimensions
+    - Format measures appropriately (currency, decimals, percentages)
+    - Add drill_fields for natural exploration paths"
+
+7. Create Deployment Documentation
+   "Create lookml/README.md with:
+    - BigQuery connection details
+    - Connection name in Looker
+    - Overview of each explore
+    - Example questions for each explore
+    - Deployment instructions
+    - Validation checklist"
+
+8. Validate LookML
+   "Check that:
+    - All sql_table_name references point to correct BigQuery tables
+    - Format: `project.dataset.table_name`
+    - All primary keys are defined
+    - All foreign keys used in joins exist
+    - No orphaned fields
+    - All explores have proper labels and descriptions
+    - Field names are consistent (snake_case)
+    - Value formats are applied where appropriate"
+
+KEY LEARNINGS
+-------------
+
+1. View Structure
+   - One view per table
+   - Primary key always defined first
+   - Foreign keys marked as hidden
+   - Dimensions before measures
+   - Add descriptions to everything
+
+2. Explore Design
+   - Choose base fact table carefully
+   - Join dimensions with proper relationships
+   - Use left_outer for optional dimensions
+   - Consider query performance
+   - Test with sample queries
+
+3. Field Definitions
+   - type: string, number, date, yesno
+   - label: User-friendly display name
+   - description: Business meaning (for AI and users)
+   - sql: Reference to table column
+   - value_format_name: usd, decimal_1, percent, etc.
+
+4. Measures
+   - type: sum, count, average, count_distinct
+   - Always add value_format for currency/percentages
+   - Write descriptions explaining the calculation
+   - Consider adding drill_fields for exploration
+
+5. AI Optimization
+   - Clear, natural language descriptions
+   - Business terms over technical jargon
+   - Explicit field purposes
+   - Comprehensive measure definitions
+   - Proper labeling for field picker
+
+6. Join Best Practices
+   - Specify join type explicitly (left_outer, inner)
+   - Define relationship (many_to_one, one_to_one)
+   - Use sql_on for join conditions
+   - Reference keys from both sides: ${table1.key} = ${table2.key}
+
+7. Performance Considerations
+   - Primary keys enable query caching
+   - Hidden fields reduce clutter
+   - Appropriate join types prevent cartesian products
+   - Indexed fields in BigQuery help query speed
+
+VALIDATION CHECKLIST
+--------------------
+☐ All 19 view files created (5 facts + 14 dimensions)
+☐ Model file includes all views
+☐ 5 explores defined with proper joins
+☐ All primary keys defined
+☐ Foreign keys hidden from users
+☐ Measures have value formats
+☐ Descriptions added to all fields
+☐ BigQuery connection configured
+☐ LookML validator passes with no errors
+☐ Sample queries execute successfully
+☐ Field picker shows organized fields
+☐ Phase 5 can query all explores
+
+COMMON ISSUES & FIXES
+---------------------
+
+Issue: "Unknown database connection"
+Fix: Update connection name in model file to match Looker configuration
+
+Issue: "Field not found" 
+Fix: Check sql_table_name format: `project.dataset.table`
+
+Issue: "Join produces duplicates"
+Fix: Verify relationship type (many_to_one vs one_to_one)
+
+Issue: "Measure returns NULL"
+Fix: Check if field exists in source table, use COALESCE if needed
+
+Issue: "Fields not visible in Phase 5"
+Fix: Ensure field catalog in gemini_client.py matches LookML definitions

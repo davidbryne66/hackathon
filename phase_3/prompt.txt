@@ -1,21 +1,310 @@
-DATAFORM V3 POC SETUP - ADVENTURE WORKS
+PHASE 3: DATA TRANSFORMATION WITH DATAFORM
+==========================================
 
-Source: dna-team-day-2025-20251003.team_day_2025_adventure_works_oltp (US)
-Target: dna-team-day-2025-20251003.team_4 (US)
+Prerequisites:
+- Phase 1 complete (star schema design)
+- Phase 2 complete (source-to-target mapping)
+- BigQuery source dataset with Adventure Works OLTP data
+- Google Cloud Dataform repository created
 
-CRITICAL REQUIREMENTS:
-1. Use workflow_settings.yaml (NOT dataform.json) - Dataform v3 standard
-2. NO assertions in config blocks (creates extra validation tables)
-3. Explicit database/schema in source declarations - don't use dataform.projectConfig.vars API
-4. Hardcode project/dataset values in sources.js and helpers.js
-5. Split each fact table into separate .sqlx files
-6. Use ${ref()} for all table references
-7. Keep it lightweight - tags for organization, dependencies for build order
+INCREMENTAL PROMPTS
+-------------------
 
-STRUCTURE:
-definitions/
-  staging/sources.js - declare all source tables with explicit database/schema
-  dimensions/*.sqlx - dimension tables, no assertions
-  facts/*.sqlx - fact tables with dependencies array, no assertions
-includes/helpers.js - utility functions with hardcoded values
-workflow_settings.yaml - project config
+1. Understand Dataform Structure
+   "We need to transform Adventure Works OLTP data into a star schema using Dataform.
+    
+    Source: dna-team-day-2025-20251003.team_day_2025_adventure_works_oltp (38 tables)
+    Target: dna-team-day-2025-20251003.team_4 (19 tables: 5 facts + 14 dimensions)
+    
+    Create a Dataform project structure:
+    - workflow_settings.yaml (NOT dataform.json - v3 standard)
+    - definitions/staging/sources.js (declare all 38 source tables)
+    - definitions/dimensions/ (14 .sqlx files)
+    - definitions/facts/ (5 .sqlx files)
+    - .gitignore
+    
+    CRITICAL: No assertions in config blocks (prevents extra validation tables)"
+
+2. Configure Dataform Project
+   "Create workflow_settings.yaml with:
+    
+    defaultProject: dna-team-day-2025-20251003
+    defaultDataset: team_4
+    defaultLocation: US
+    dataformCoreVersion: 3.0.26
+    vars:
+      source_project: dna-team-day-2025-20251003
+      source_dataset: team_day_2025_adventure_works_oltp
+    
+    Create .gitignore to exclude:
+    - node_modules/
+    - .df-temp/"
+
+3. Declare Source Tables
+   "In definitions/staging/sources.js, declare all 38 OLTP source tables:
+    
+    const src = {
+      database: dataform.projectConfig.vars.source_project,
+      schema: dataform.projectConfig.vars.source_dataset
+    };
+    
+    // Declare each table
+    declare({ ...src, name: 'Production_Product' });
+    declare({ ...src, name: 'Production_ProductSubcategory' });
+    declare({ ...src, name: 'Production_ProductCategory' });
+    // ... (35 more tables)
+    
+    Use Phase 2's source-to-target mapping to identify all needed source tables."
+
+4. Build Date Dimension First
+   "Create definitions/dimensions/dim_date.sqlx:
+    
+    config {
+      type: 'table',
+      schema: 'team_4',
+      description: 'Date dimension',
+      tags: ['dimension']
+    }
+    
+    -- Generate date spine for 2011-2014
+    WITH date_spine AS (
+      SELECT date_day
+      FROM UNNEST(GENERATE_DATE_ARRAY('2011-01-01', '2014-12-31', INTERVAL 1 DAY)) AS date_day
+    )
+    
+    SELECT
+      CAST(FORMAT_DATE('%Y%m%d', date_day) AS INT64) AS date_key,
+      date_day AS full_date,
+      EXTRACT(YEAR FROM date_day) AS year,
+      EXTRACT(MONTH FROM date_day) AS month_number,
+      FORMAT_DATE('%B', date_day) AS month_name,
+      EXTRACT(QUARTER FROM date_day) AS quarter,
+      FORMAT_DATE('%A', date_day) AS day_name,
+      CASE WHEN EXTRACT(DAYOFWEEK FROM date_day) IN (1,7) THEN TRUE ELSE FALSE END AS is_weekend
+    FROM date_spine
+    
+    NO assertions block!"
+
+5. Build Core Dimensions
+   "Create dimension SQLX files for core entities:
+    
+    dim_product.sqlx:
+    - Surrogate key: DENSE_RANK() over ProductID
+    - Join to ProductSubcategory and ProductCategory
+    - Include: product_name, category_name, subcategory_name, color, size, cost, price
+    
+    dim_customer.sqlx:
+    - Surrogate key: DENSE_RANK() over CustomerID
+    - Join to Person, Store
+    - Include: customer_name, customer_type, city, state, country
+    
+    dim_territory.sqlx:
+    - Surrogate key: DENSE_RANK() over TerritoryID
+    - Include: territory_name, country_region_name, sales_group
+    
+    Continue for all 14 dimensions.
+    Use ${ref('source_table')} for all table references."
+
+6. Build Smallest Fact Table First
+   "Start with fct_product_reviews.sqlx (only 4 rows - easiest to validate):
+    
+    config {
+      type: 'table',
+      schema: 'team_4',
+      description: 'Product reviews fact table',
+      tags: ['fact'],
+      dependencies: ['dim_product', 'dim_date']
+    }
+    
+    SELECT
+      pr.ProductReviewID AS product_review_id,
+      dp.product_key,
+      dd.date_key AS review_date_key,
+      pr.ReviewerName AS reviewer_name,
+      pr.Rating AS rating,
+      pr.Comments AS comments,
+      LENGTH(pr.Comments) AS comment_length,
+      -- Sentiment analysis (simple)
+      CASE
+        WHEN pr.Rating >= 4 THEN 'Positive'
+        WHEN pr.Rating = 3 THEN 'Neutral'
+        ELSE 'Negative'
+      END AS sentiment
+    FROM ${ref('Production_ProductReview')} pr
+    JOIN ${ref('dim_product')} dp ON pr.ProductID = dp.product_id
+    JOIN ${ref('dim_date')} dd ON CAST(FORMAT_DATE('%Y%m%d', pr.ReviewDate) AS INT64) = dd.date_key
+    
+    Test this thoroughly before building larger facts."
+
+7. Build Remaining Fact Tables
+   "Create SQLX files for remaining facts:
+    
+    fct_sales.sqlx:
+    - Grain: SalesOrderDetailID (order line item)
+    - Keys: customer, product, territory, salesperson, dates, addresses, etc.
+    - Metrics: line_total, order_quantity, unit_price, gross_profit
+    - Dependencies: All related dimensions
+    
+    fct_product_inventory.sqlx:
+    - Grain: Product-Location-Snapshot
+    - Keys: product, location, snapshot_date
+    - Metrics: quantity_on_hand, reorder_point, safety_stock
+    - Add stock_status dimension (calculated)
+    
+    fct_purchases.sqlx:
+    - Grain: PurchaseOrderDetailID (PO line item)
+    - Keys: vendor, product, employee, ship_method, dates
+    - Metrics: order_qty, received_qty, rejected_qty, line_total
+    
+    fct_work_orders.sqlx:
+    - Grain: WorkOrderID
+    - Keys: product, location, scrap_reason, dates
+    - Metrics: order_qty, scrapped_qty, scrap_rate
+    
+    For each fact:
+    - Use explicit dependencies array
+    - Join to all dimension tables
+    - Calculate derived metrics
+    - Handle NULLs with COALESCE"
+
+8. Validate and Deploy
+   "Run through validation checklist:
+    
+    1. Compile in Dataform - should show 19 actions
+    2. Check no assertion tables in compilation
+    3. Execute workflow
+    4. Verify exactly 19 tables created in team_4 dataset
+    5. Check row counts match expectations
+    6. Test foreign key relationships
+    7. Query sample data from each table
+    8. Verify no duplicate keys in dimensions"
+
+KEY LEARNINGS
+-------------
+
+1. Dataform v3 Standards
+   - Use workflow_settings.yaml (NOT dataform.json)
+   - No package.json needed for cloud-based Dataform
+   - Source declarations in sources.js with explicit project/dataset
+   - No node_modules or @dataform/core imports
+
+2. No Assertions
+   - CRITICAL: Remove all assertions from config blocks
+   - Assertions create extra validation tables (e.g., table_assertions_uniqueKey_0)
+   - Ended up with 77 tables instead of 19 when assertions included
+   - Keep config clean: type, schema, description, tags, dependencies only
+
+3. SQLX Structure
+   - config block at top (JavaScript object)
+   - Pure SQL query below
+   - Use ${ref('table_name')} for references
+   - Dataform handles fully qualified names
+
+4. Build Order
+   - Dimensions first (no dependencies)
+   - Facts after dimensions (explicit dependencies)
+   - Dataform builds dependency graph automatically
+   - Use dependencies array in config to enforce order
+
+5. Surrogate Keys
+   - DENSE_RANK() for consistent integer keys
+   - ORDER BY natural key (ProductID, CustomerID, etc.)
+   - Ensures reproducible key assignment
+   - Alternative: ROW_NUMBER() if order doesn't matter
+
+6. Date Keys
+   - Format: YYYYMMDD as INT64
+   - Example: 20140315
+   - Easy to join, human-readable
+   - Use CAST(FORMAT_DATE('%Y%m%d', date_col) AS INT64)
+
+7. Derived Metrics
+   - Calculate in fact table SQL
+   - Examples: gross_profit, scrap_rate, stock_status
+   - Makes queries simpler in Phase 4/5
+   - Pre-compute common calculations
+
+8. NULL Handling
+   - Use COALESCE for optional fields
+   - LEFT JOIN for optional dimensions
+   - Default values where appropriate
+   - Prevents broken joins
+
+9. Incremental Development
+   - Start with simplest fact (product_reviews - 4 rows)
+   - Validate thoroughly before expanding
+   - Add one fact/dimension at a time
+   - Test after each addition
+
+VALIDATION CHECKLIST
+--------------------
+☐ workflow_settings.yaml configured correctly
+☐ All 38 source tables declared in sources.js
+☐ 14 dimension .sqlx files created
+☐ 5 fact .sqlx files created
+☐ NO assertions in any config blocks
+☐ Dependencies defined for all facts
+☐ ${ref()} used for all table references
+☐ Compilation shows exactly 19 actions
+☐ Execution creates exactly 19 tables
+☐ Row counts match expectations
+☐ No duplicate keys in dimensions
+☐ Foreign keys valid (no orphans)
+☐ Sample queries return expected data
+
+COMMON ISSUES & FIXES
+---------------------
+
+Issue: "77 tables created instead of 19"
+Fix: Remove ALL assertions from config blocks
+
+Issue: "Failed to resolve @dataform/core"
+Fix: Don't use package.json - cloud Dataform doesn't need it
+
+Issue: "dataform.json deprecated error"
+Fix: Use workflow_settings.yaml instead
+
+Issue: "Source table not found"
+Fix: Check project.dataset.table format in source declarations
+
+Issue: "Circular dependency detected"
+Fix: Facts should depend on dimensions, never reverse
+
+Issue: "Dimension has NULL keys"
+Fix: Use DENSE_RANK() or ROW_NUMBER() to generate keys, handle NULLs in source
+
+Issue: "Fact table has orphaned records"
+Fix: Use LEFT JOIN for optional dimensions, verify source data quality
+
+EXPECTED ROW COUNTS
+-------------------
+fct_sales: ~121,317
+fct_product_reviews: 4
+fct_product_inventory: ~1,069
+fct_purchases: ~8,845
+fct_work_orders: ~72,591
+dim_product: ~504
+dim_customer: ~19,820
+dim_date: 1,461 (2011-2014)
+dim_territory: 10
+dim_salesperson: 17
+dim_location: 14
+dim_vendor: 104
+dim_employee: 290
+dim_ship_method: 5
+dim_special_offer: 16
+dim_credit_card: 19
+dim_currency: 105
+dim_address: ~19,614
+dim_scrap_reason: 16
+
+DEPLOYMENT STEPS
+----------------
+1. Create Dataform repository in Google Cloud Console
+2. Create workspace (e.g., "dev")
+3. Upload all files maintaining directory structure
+4. Commit to Git
+5. Run compilation (should show 19 actions)
+6. Execute workflow
+7. Verify 19 tables in BigQuery team_4 dataset
+8. Validate data quality with sample queries

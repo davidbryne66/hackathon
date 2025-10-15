@@ -1,0 +1,7 @@
+streamlit==1.29.0
+pandas==2.1.4
+plotly==5.18.0
+python-dotenv==1.0.0
+google-generativeai==0.3.2
+looker-sdk==23.20.1
+

@@ -1,0 +1,130 @@
+PHASE 5: CONVERSATIONAL ANALYTICS INTERFACE
+===========================================
+
+Prerequisites:
+- Phase 4 complete (LookML model deployed to Looker)
+- Gemini API key
+- Looker API credentials
+
+INCREMENTAL PROMPTS
+-------------------
+
+1. Initial Setup
+   "Read info.txt and understand Phase 5: Conversational Analytics Interface. 
+    Build a Python application with Streamlit that allows users to ask questions in plain English.
+    The app should:
+    - Use Gemini AI to translate natural language to Looker queries
+    - Execute queries via Looker API
+    - Display results with visualizations
+    - Maintain conversation history
+    
+    Create the following files:
+    - app.py (main Streamlit app)
+    - gemini_client.py (Gemini API integration)
+    - looker_client.py (Looker API integration)
+    - requirements.txt
+    - .env.example
+    - README.md"
+
+2. LookML Context Integration
+   "The Gemini client needs complete LookML field catalog for all 5 explores:
+    - sales_analysis
+    - product_reviews
+    - inventory_analysis
+    - purchasing_analysis
+    - manufacturing_analysis
+    
+    For each explore, include:
+    - Dimensions (grouping fields)
+    - Measures (metrics)
+    - Field descriptions
+    - Use cases
+    
+    Add concrete examples showing NL question → JSON query structure.
+    Ensure dimensions and measures are always included in generated queries."
+
+3. UI Refinements
+   "Refine the Streamlit interface:
+    - Fix white box display issues in chat messages (transparent backgrounds)
+    - Remove excessive emojis for professional appearance
+    - Improve metric formatting (K/M suffixes for large numbers)
+    - Add smart chart selection (bar for ≤10 rows, line for >10)
+    - Display statistical summaries (min, max, avg)
+    - Add response time tracking"
+
+4. Multi-Conversation Support
+   "Add conversation management features:
+    - Multiple chat threads with independent history
+    - Switch between conversations
+    - Delete conversations
+    - Track per-conversation statistics (query count, avg response time)
+    - Show active conversation indicator"
+
+5. Advanced Features
+   "Add enterprise features:
+    - Settings toggle to enable/disable AI insights and query details
+    - Professional export reports (markdown with session metadata)
+    - In-app help system with examples and data catalog
+    - Enhanced error handling with fallbacks
+    - Progress indicators during query execution"
+
+6. Testing & Validation
+   "Stress test the application:
+    - Test all 5 explores with various question types
+    - Verify inventory queries work (fix 'Missing required field' errors)
+    - Test error handling and fallback scenarios
+    - Validate query structure generation
+    - Check UI responsiveness with different data sizes"
+
+7. Documentation
+   "Create comprehensive README covering:
+    - Overview and features
+    - Quick start guide
+    - Architecture diagram
+    - Usage guide with examples
+    - Configuration details
+    - Troubleshooting common issues
+    - Deployment instructions"
+
+KEY LEARNINGS
+-------------
+
+1. LookML Field Catalog
+   - Must include ALL dimensions and measures for each explore
+   - Dimensions are required for grouping/filtering
+   - Measures are required for metrics
+   - Include field descriptions and use cases
+
+2. Gemini Prompt Engineering
+   - Provide concrete examples of NL → JSON translation
+   - Specify required fields explicitly
+   - Add validation rules in prompt
+   - Include fallback behavior
+
+3. Streamlit Best Practices
+   - Use session_state for persistence
+   - Chat message components for conversation UI
+   - Transparent backgrounds to avoid display issues
+   - Progress bars for long operations
+
+4. Error Handling
+   - Validate query structure before execution
+   - Provide graceful fallbacks
+   - Return mock data when API unavailable
+   - Show helpful error messages to users
+
+5. Professional UI
+   - Minimal emoji usage
+   - Consistent formatting
+   - Smart visualizations based on data characteristics
+   - Performance metrics visible to users
+
+DEPLOYMENT CHECKLIST
+--------------------
+☐ Configure .env with API keys
+☐ Test Looker connection
+☐ Test Gemini API
+☐ Verify all 5 explores work
+☐ Test error scenarios
+☐ Deploy to Streamlit Cloud (optional)
+

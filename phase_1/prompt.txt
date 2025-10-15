@@ -1,4 +1,253 @@
-1) Read the csv file and describe the relationship between the entities here.
-2) Given this OLTP schema for a bicycle manufacturer, propose a star schema to analyze sales performance. What would be the central fact table? What dimensions would be most useful?
-3) Give me the DDL based on the schema we generated.
-4) Based on the fact and dimension table relationship (star schema objects), create markdown diagrams
+PHASE 1: DIMENSIONAL DATA MODELING
+===================================
+
+Prerequisites:
+- raw_schema.csv (OLTP schema reference)
+- Understanding of Adventure Works bicycle manufacturing business
+- Familiarity with star schema concepts
+
+INCREMENTAL PROMPTS
+-------------------
+
+1. Understand the Source Schema
+   "Read raw_schema.csv and describe the relationships between entities.
+    
+    Focus on:
+    - Primary fact-generating processes (Sales, Purchases, Manufacturing, Inventory)
+    - Key business entities (Products, Customers, Vendors, Employees)
+    - How tables relate to each other
+    - Transactional vs descriptive data"
+
+2. Design Star Schema
+   "Given this OLTP schema for a bicycle manufacturer (Adventure Works), propose a star schema 
+    to analyze sales performance.
+    
+    Answer these questions:
+    - What are the main business processes? (Sales, Reviews, Inventory, Purchasing, Manufacturing)
+    - What would be the central fact tables?
+    - What dimensions would be most useful?
+    - How should we handle slowly changing dimensions?
+    
+    Create a complete star schema with:
+    - 5 fact tables (one per business process)
+    - 14 dimension tables
+    - Clearly defined grain for each fact
+    - Identified foreign keys and relationships
+    
+    Save output to schema.txt"
+
+3. Generate DDL
+   "Based on the star schema design in schema.txt, generate BigQuery DDL statements.
+    
+    For each dimension table:
+    - Primary key (surrogate key as INT64)
+    - Natural key (original business key)
+    - Descriptive attributes
+    - Timestamps for tracking
+    
+    For each fact table:
+    - Primary key (grain)
+    - Foreign keys to dimensions
+    - Degenerate dimensions (transaction IDs, flags)
+    - Metrics and measures
+    - Timestamps
+    
+    Save to ddl.sql"
+
+4. Create Visual Diagrams
+   "Based on the fact and dimension relationships, create Mermaid markdown diagrams.
+    
+    Create diagrams for:
+    - Overall star schema (all facts and dimensions)
+    - Individual fact-dimension relationships for each fact table
+    - Show cardinality (one-to-many, many-to-one)
+    - Include key fields
+    
+    Save to diagram.md"
+
+5. Refine Diagrams for Business Readiness
+   "Refine diagram.md to be business-ready, self-explanatory, and self-contained.
+    
+    Make it more professional:
+    - Remove excessive emojis (keep minimal visual markers only)
+    - Use business-ready, corporate tone throughout
+    
+    Make it self-explanatory:
+    - Add business purpose for each schema
+    - Define grain explicitly for each fact table
+    - List key analytical questions each schema answers
+    - Explain all metrics and measures
+    - Include business rules and calculation logic
+    
+    Make it self-contained:
+    - Add 'Key Concepts' section upfront (star schema, grain, surrogate keys, etc.)
+    - Include detailed dimension specifications with attribute listings
+    - Add data type specifications for BigQuery
+    - Document relationship cardinalities with examples
+    - Provide SQL query examples showing model usage
+    - Add comprehensive glossary of all technical terms
+    
+    Include:
+    - Business context for each fact table
+    - Row count estimates and data volumes
+    - Implementation considerations (partitioning, clustering)
+    - Storage estimates
+    - Performance optimization notes
+    
+    Result should be suitable for:
+    - Business stakeholder review
+    - Technical team implementation
+    - Data governance documentation
+    - Training and onboarding
+    - Audit and compliance review"
+
+KEY LEARNINGS
+-------------
+
+1. Star Schema Design Principles
+   - Fact tables: Measure business processes at specific grain
+   - Dimensions: Provide context (who, what, when, where, why, how)
+   - Denormalize dimensions for query performance
+   - Use surrogate keys for dimensions
+   - Keep facts narrow, dimensions wide
+
+2. Fact Table Grain
+   - Define grain explicitly before designing
+   - One row per...
+     * Sales: Order line item
+     * Reviews: Product review
+     * Inventory: Product-location-snapshot
+     * Purchases: PO line item
+     * Work Orders: Work order
+   - Grain determines which dimensions are valid
+
+3. Dimension Design
+   - Slowly changing dimensions (SCD)
+     * Type 1: Overwrite (simple, loses history)
+     * Type 2: Add row (preserves history)
+     * Type 3: Add column (limited history)
+   - Use Type 1 for POC, consider Type 2 for production
+   - Include descriptive attributes business users understand
+   - Hierarchies for drill-down (Category → Subcategory → Product)
+
+4. BigQuery Considerations
+   - Use INT64 for numeric keys
+   - Use STRING for text fields
+   - Use DATE for dates (not TIMESTAMP for date dimensions)
+   - NUMERIC for currency (precise decimals)
+   - BOOL for flags
+
+5. Surrogate Keys
+   - System-generated integers
+   - Independent of source system
+   - Allows merging data from multiple sources
+   - Simplifies dimension updates
+   - Smaller than natural keys (performance)
+
+6. Date Dimension
+   - One row per date in range
+   - Precomputed calendar attributes
+   - Fiscal vs calendar periods
+   - Holiday flags
+   - Makes time-based queries easier
+
+7. Multiple Fact Tables
+   - Different grains require separate facts
+   - Share conformed dimensions
+   - Example: Sales (line item) vs Inventory (snapshot)
+   - Don't mix grains in same fact table
+
+8. Documentation Best Practices
+   - Make documentation self-contained (no external dependencies)
+   - Include business context, not just technical specs
+   - Define all terms and concepts upfront
+   - Provide concrete examples and use cases
+   - Use professional, corporate-ready tone
+   - Minimize emojis and decorative elements
+   - Include query examples showing practical usage
+   - Add implementation considerations (performance, storage)
+   - Create comprehensive glossaries
+   - Ensure documentation can serve multiple audiences:
+     * Business stakeholders (why and what)
+     * Technical teams (how to implement)
+     * Data governance (compliance and audit)
+     * New team members (onboarding and training)
+
+DESIGN DECISIONS
+----------------
+
+Fact Tables (5):
+1. fct_sales - Grain: Order line item
+   - Why: Detailed sales analysis
+   - Dimensions: Product, Customer, Territory, Salesperson, Dates, etc.
+
+2. fct_product_reviews - Grain: Review
+   - Why: Customer sentiment analysis
+   - Dimensions: Product, Date
+
+3. fct_product_inventory - Grain: Product-Location-Snapshot
+   - Why: Stock level tracking
+   - Dimensions: Product, Location, Date
+
+4. fct_purchases - Grain: PO line item
+   - Why: Vendor performance
+   - Dimensions: Vendor, Product, Employee, Date
+
+5. fct_work_orders - Grain: Work order
+   - Why: Manufacturing efficiency
+   - Dimensions: Product, Location, Scrap Reason, Date
+
+Dimension Tables (14):
+- dim_product: Product catalog
+- dim_customer: Customer info
+- dim_date: Date attributes
+- dim_territory: Sales regions
+- dim_salesperson: Sales reps
+- dim_location: Warehouses
+- dim_vendor: Suppliers
+- dim_employee: Employee directory
+- dim_ship_method: Shipping options
+- dim_special_offer: Promotions
+- dim_credit_card: Payment methods
+- dim_currency: Currency codes
+- dim_address: Geographic locations
+- dim_scrap_reason: Quality issues
+
+DELIVERABLES CHECKLIST
+----------------------
+☐ schema.txt created with complete star schema design
+☐ ddl.sql with BigQuery DDL for all tables
+☐ diagram.md with Mermaid visualizations
+☐ diagram.md refined to be business-ready and self-contained
+☐ All fact tables have clearly defined grain
+☐ All foreign key relationships identified
+☐ Dimensions include descriptive attributes
+☐ Date dimension covers full data range (2011-2014)
+☐ Documentation includes business context and examples
+☐ Glossary and reference materials provided
+
+VALIDATION QUESTIONS
+--------------------
+- Can each fact table answer its intended business questions?
+- Are all foreign keys in facts present as primary keys in dimensions?
+- Is the grain of each fact table atomic (lowest level of detail)?
+- Do dimensions have enough attributes for business analysis?
+- Are hierarchies properly represented (Category → Subcategory → Product)?
+- Can dimensions be reused across multiple facts (conformed)?
+- Is the documentation self-contained and understandable without external references?
+- Does diagram.md explain business purpose and analytical use cases?
+- Are all technical terms defined in a glossary?
+- Does the documentation serve both technical and business audiences?
+
+COMMON MISTAKES TO AVOID
+------------------------
+- Mixing different grains in same fact table
+- Missing date dimensions (every fact needs dates)
+- Over-normalizing dimensions (defeats star schema purpose)
+- Using natural keys instead of surrogates
+- Missing important dimensions (causes null foreign keys)
+- Incorrect cardinality in relationships
+- Creating documentation that requires external context to understand
+- Using excessive emojis in business documentation
+- Omitting business purpose and analytical use cases
+- Missing glossary or key concept definitions
